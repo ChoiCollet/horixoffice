@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사이트 소개 | PDF 스튜디오</title>
+<meta name="description" content="PDF 스튜디오는 왜, 어떻게 만들어졌는지 소개합니다. 설치나 로그인 없이 브라우저에서 PDF를 다루고 싶다는 불편함에서 시작된 개인 프로젝트입니다.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="logo" href="index.html"><span class="dot"></span>PDF 스튜디오</a>
+  <nav>
+    <a href="index.html">도구 사용하기</a>
+    <a href="about.html">사이트 소개</a>
+    <a href="contact.html">문의</a>
+    <a href="privacy.html">개인정보처리방침</a>
+  </nav>
+</header>
+
+<main class="page-wrap">
+  <h1>사이트 소개</h1>
+  <p class="sub">PDF 스튜디오를 만든 이유와 지금까지의 과정</p>
+
+  <h2>왜 만들었나요</h2>
+  <p>
+    한컴오피스의 '한컴PDF'를 쓰면서, 굳이 프로그램을 설치하지 않고도 브라우저 안에서
+    PDF를 보고, 원하는 쪽만 골라 인쇄용으로 만들고, 주석을 남기고, 여러 파일을 하나로 합칠 수 있으면
+    좋겠다는 생각에서 시작했습니다. 한컴PDF의 모든 기능을 그대로 옮기는 것은 현실적으로 어렵지만,
+    실제로 자주 쓰는 핵심 기능만이라도 웹에서 가볍게 쓸 수 있게 만드는 것이 목표입니다.
+  </p>
+
+  <h2>이름의 유래</h2>
+  <p>
+    이 자리에는 사이트 이름을 어떻게 지었는지, 왜 그 이름을 골랐는지에 대한 이야기를 채워 넣어 주세요.
+    (예: 어떤 단어를 조합했는지, 어떤 의미를 담고 싶었는지 등)
+  </p>
+
+  <h2>무엇을 할 수 있나요</h2>
+  <table>
+    <tr><th>기능</th><th>설명</th></tr>
+    <tr><td>PDF 보기</td><td>페이지 썸네일과 함께 문서를 확대·축소·회전하며 볼 수 있어요.</td></tr>
+    <tr><td>인쇄용 PDF 만들기</td><td>원하는 쪽 범위, 용지 크기, 방향, 매수를 설정해 새 PDF로 저장해요.</td></tr>
+    <tr><td>주석</td><td>선·화살표·도형·자유형·강조·밑줄·취소선·스티커노트를 그려 넣고, 반영된 PDF로 저장할 수 있어요.</td></tr>
+    <tr><td>쪽 병합</td><td>여러 PDF 파일을 원하는 순서로 하나로 합칠 수 있어요.</td></tr>
+    <tr><td>화면 캡처</td><td>보고 있는 쪽에서 원하는 영역만 잘라 이미지로 저장할 수 있어요.</td></tr>
+    <tr><td>프레젠테이션</td><td>전체 화면으로 페이드·밀어내기 전환 효과와 함께 문서를 넘겨볼 수 있어요.</td></tr>
+  </table>
+
+  <h2>어떻게 동작하나요</h2>
+  <p>
+    이 사이트는 별도의 서버 없이 정적으로 동작하는 웹페이지예요. 업로드한 PDF는 어디로도 전송되지 않고,
+    지금 보고 있는 브라우저 안에서만 열리고, 편집되고, 저장돼요. 페이지 렌더링에는
+    <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a>를,
+    새 PDF를 만드는 데에는 <a href="https://pdf-lib.js.org/" target="_blank" rel="noopener">pdf-lib</a>를 사용합니다.
+  </p>
+
+  <h2>앞으로</h2>
+  <p>
+    HWP·DOCX·PPTX·XLSX 같은 다른 오피스 형식으로의 변환이나 클라우드 로그인·동기화는
+    서버와 유료 변환 API가 필요해 정적 사이트만으로는 구현할 수 없어요. 대신 지금 만든 기능들을
+    더 안정적이고 편하게 다듬어 나가는 데 집중하고 있어요.
+  </p>
+</main>
+
+<footer class="site-footer">
+  <div><a href="about.html">사이트 소개</a> · <a href="contact.html">문의</a> · <a href="privacy.html">개인정보처리방침</a></div>
+  <div style="margin-top:6px">© 2026 PDF 스튜디오</div>
+</footer>
+
+</body>
+</html>
