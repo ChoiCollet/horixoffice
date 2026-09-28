@@ -50,6 +50,7 @@ async function loadPDFFromFile(file) {
     const buf = await file.arrayBuffer();
     STATE.fileBytes = buf;
     STATE.fileName = file.name || "제목 없음.pdf";
+    STATE.fileModified = file.lastModified;
     $("docTitle").textContent = STATE.fileName + " - HorixOffice";
 
     const loadingTask = pdfjsLib.getDocument({ data: buf.slice(0) });

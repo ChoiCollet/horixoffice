@@ -66,14 +66,9 @@ document.addEventListener("DOMContentLoaded", () => {
     b.classList.add("on"); $("transitionSelect").value = b.dataset.tr;
   }));
 
-  // 인쇄 모달
-  $("rangeSelect").addEventListener("change", (e) => {
-    $("customRangeWrap").style.display = e.target.value === "custom" ? "block" : "none"; PRINTMOD.updatePreview();
-  });
-  ["customRange", "reversePrint", "orientationSelect", "paperSize", "fitToPage"].forEach((id) => {
-    $(id).addEventListener("input", () => PRINTMOD.updatePreview());
-    $(id).addEventListener("change", () => PRINTMOD.updatePreview());
-  });
+  // 인쇄 창
+  $("printWin").addEventListener("input", () => PRINTMOD.updatePreview());
+  $("printWin").addEventListener("change", () => PRINTMOD.updatePreview());
   $("executePrint").addEventListener("click", () => PRINTMOD.execute());
 
   // 주석
@@ -93,13 +88,4 @@ document.addEventListener("DOMContentLoaded", () => {
   $("clearRecentBtn").addEventListener("click", () => RECENT.clear());
 
   window.addEventListener("resize", () => { if (STATE.pdfDoc && STATE.fitMode !== "custom") renderCurrentPage(); });
-  document.addEventListener("keydown", (e) => {
-    const k = e.ctrlKey && e.key.toLowerCase();
-    if (k === "o") { e.preventDefault(); ACT.open(); }
-    else if (k === "p" && STATE.pdfDoc) { e.preventDefault(); ACT.print(); }
-    else if (k === "s" && STATE.pdfDoc) { e.preventDefault(); ACT.save(); }
-    if ($("presentOverlay").classList.contains("open") || !STATE.pdfDoc) return;
-    if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
-    if (e.key === "ArrowLeft") ACT.prev(); if (e.key === "ArrowRight") ACT.next();
-  });
 });

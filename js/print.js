@@ -30,13 +30,17 @@ function parsePageRange(text, max) {
   return Array.from(out).sort((a, b) => a - b);
 }
 
-function getSelectedPages() {
-  const mode = $("rangeSelect").value;
-  let pages;
-  if (mode === "all") pages = Array.from({ length: STATE.numPages }, (_, i) => i + 1);
-  else if (mode === "current") pages = [STATE.currentPage];
-  else pages = parsePageRange($("customRange").value, STATE.numPages);
+function getOrient() { return document.querySelector("input[name=orient]:checked").value; }
 
+function getSelectedPages() {
+  const mode = document.querySelector("input[name=prange]:checked").value;
+  const all = Array.from({ length: STATE.numPages }, (_, i) => i + 1);
+  let pages;
+  if (mode === "all") pages = all;
+  else if (mode === "current") pages = [STATE.currentPage];
+  else if (mode === "from") pages = all.filter((n) => n >= STATE.currentPage);
+  else if (mode === "to") pages = all.filter((n) => n <= STATE.currentPage);
+  else pages = parsePageRange($("customRange").value, STATE.numPages);
   if ($("reversePrint").checked) pages = pages.slice().reverse();
   return pages;
 }
@@ -45,9 +49,8 @@ const PRINTMOD = {
   open() {
     if (!STATE.pdfDoc) return;
     $("customRange").value = "";
-    $("rangeSelect").value = "all";
-    $("customRangeWrap").style.display = "none";
-    openModal("printOverlay");
+    document.querySelector("input[name=prange][value=all]").checked = true;
+    openModal("printWin"); centerWin($("printWin"));
     this.updatePreview();
   },
 
@@ -62,7 +65,7 @@ const PRINTMOD = {
       return;
     }
     const [paperW, paperH] = PAPER_SIZES_MM[$("paperSize").value];
-    let orient = $("orientationSelect").value;
+    let orient = getOrient();
     if (orient === "auto") {
       const page = await STATE.pdfDoc.getPage(pages[0]);
       const vp = page.getViewport({ scale: 1 });
@@ -90,9 +93,7 @@ const PRINTMOD = {
     const dy = (canvas.height - vp.height) / 2;
     ctx.drawImage(off, dx, dy);
 
-    $("previewText").textContent =
-      `${pages.length}쪽 선택됨 · ${$("paperSize").value} · ${orient === "landscape" ? "가로" : "세로"}` +
-      (pages.length > 1 ? ` (미리보기는 첫 페이지만 표시)` : "");
+    $("previewText").textContent = `${Math.round(pw)} mm X ${Math.round(ph)} mm · ${pages.length}쪽 선택됨`;
   },
 
   async execute() {
@@ -102,7 +103,7 @@ const PRINTMOD = {
     showLoading("인쇄용 PDF를 만드는 중…");
     try {
       const [paperW, paperH] = PAPER_SIZES_MM[$("paperSize").value];
-      let orientSetting = $("orientationSelect").value;
+      let orientSetting = getOrient();
       const fitToPage = $("fitToPage").checked;
       const copies = Math.max(1, Math.min(99, parseInt($("copies").value, 10) || 1));
       const collate = $("collate").checked;
@@ -160,7 +161,7 @@ const PRINTMOD = {
       const bytes = await outDoc.save();
       downloadBytes(bytes, replaceExt(STATE.fileName, "_인쇄용.pdf"), "application/pdf");
       showToast("인쇄용 PDF를 만들었어요.");
-      closeModal("printOverlay");
+      closeModal("printWin");
     } catch (err) {
       console.error(err);
       showToast("인쇄용 PDF 생성 중 문제가 발생했어요.");
