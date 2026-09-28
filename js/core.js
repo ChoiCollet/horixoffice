@@ -39,14 +39,7 @@ document.addEventListener("click", (e) => {
 });
 
 function setControlsEnabled(enabled) {
-  const ids = [
-    "prevBtn", "nextBtn", "pageInput", "zoomOutBtn", "zoomInBtn", "fitBtn",
-    "rotateBtn", "printBtn", "saveOrigBtn",
-    "v_fitWidth", "v_fitPage", "v_100", "v_toggleAnno", "v_present",
-    "p_fromStart", "p_fromCurrent", "t_capture", "annoExport", "annoUndo", "annoClearPage",
-  ];
-  ids.forEach((id) => { const el = $(id); if (el) el.disabled = !enabled; });
-  document.querySelectorAll(".atool").forEach((b) => { b.disabled = !enabled; });
+  document.querySelectorAll("[data-need]").forEach((el) => { el.disabled = !enabled; });
 }
 
 /* ---------- 파일 열기 ---------- */
@@ -57,6 +50,7 @@ async function loadPDFFromFile(file) {
     const buf = await file.arrayBuffer();
     STATE.fileBytes = buf;
     STATE.fileName = file.name || "제목 없음.pdf";
+    $("docTitle").textContent = STATE.fileName + " - HorixOffice";
 
     const loadingTask = pdfjsLib.getDocument({ data: buf.slice(0) });
     const doc = await loadingTask.promise;
@@ -137,7 +131,8 @@ async function renderCurrentPage() {
   $("pageWrap").style.height = viewport.height + "px";
 
   STATE.pageViewport = viewport;
-  $("zoomText").textContent = Math.round(STATE.scale * 100) + "%";
+  $("zoomText").textContent = Math.round(STATE.scale * 100) + " %";
+  $("zoomSlider").value = Math.round(STATE.scale * 100);
   $("pageInput").value = STATE.currentPage;
   $("statusPage").textContent = `페이지 ${STATE.currentPage} / ${STATE.numPages}`;
 

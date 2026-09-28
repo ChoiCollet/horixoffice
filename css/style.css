@@ -423,3 +423,41 @@ input.rnum { width: 46px; text-align: center; }
 @media (max-width: 900px) {
   #leftPanel, #rightPanel { display: none; }
 }
+
+/* ===== HorixOffice: 한PDF 레이아웃 + 화이트 테마 ===== */
+[hidden]{display:none!important}
+.site-header{background:#fff;color:#222;border-bottom:1px solid var(--ribbon-border)}
+.site-header .logo{color:#222}.site-header nav a{color:#555}.site-header nav a:hover{color:#000}
+#titlebar{flex:none;height:38px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 10px 0 0;background:#fff}
+#titlebar .logo{width:38px;height:38px;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:18px;border-radius:0 0 12px 0}
+#docTitle{font-size:13px;color:#333;text-align:center}
+#titlebar nav{display:flex;justify-content:flex-end;align-items:center;gap:14px}
+#titlebar nav a{font-size:12px;color:#555;text-decoration:none}#titlebar nav a:hover{color:var(--brand)}
+#menurow{flex:none;height:36px;display:flex;align-items:stretch;background:#fff;padding-left:6px;position:relative}
+.filebtn{border:0;background:transparent;width:64px;font-weight:700;font-size:13px;cursor:pointer;margin:4px 0}
+.filebtn:hover,.filebtn.open{background:#e9ebef}
+.vsep{width:1px;background:var(--ribbon-border);margin:8px 8px}
+.tab{width:104px;border:0;background:transparent;font-size:13px;cursor:pointer;color:#333;border-bottom:2px solid transparent}
+.tab:hover{background:#f3f4f6}.tab.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+#fileMenu{position:absolute;left:0;top:36px;width:380px;background:#fff;border:1px solid #cfd3d9;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:60;padding:4px 0}
+#fileMenu hr{border:0;border-top:1px solid #e3e5ea;margin:4px 0}
+.mi{display:flex;justify-content:space-between;width:100%;border:0;background:none;padding:7px 16px;font-size:13px;cursor:pointer;text-align:left}
+.mi:hover{background:#e8effd}.mi kbd{font:11px inherit;color:#888}.mi.dim{color:#666;font-size:12px;padding:5px 16px}
+#ribbon{flex:none;height:88px;background:#fff;border-top:1px solid var(--ribbon-border);border-bottom:1px solid var(--ribbon-border)}
+.panel{display:none;height:100%;align-items:stretch;padding:4px 6px;overflow-x:auto;gap:0}.panel.active{display:flex}
+.rg{display:flex;align-items:stretch;padding:0 6px;border-right:1px solid var(--ribbon-border)}.rg:last-child{border-right:0}
+.rb{width:64px;border:1px solid transparent;background:none;border-radius:4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:6px 2px;font-size:11.5px;line-height:1.25;color:#222}
+.rb i{font-style:normal;font-size:24px;line-height:28px;color:#4b5b74;height:28px}.rb span{text-align:center}
+.rb:hover:not(:disabled){background:#eef1f6}.rb.on{background:#dfe3ea;border-color:#c9ced8}
+.rb:disabled{opacity:.4;cursor:not-allowed}
+.stack{display:flex;flex-direction:column;justify-content:center}.rb.sm{flex-direction:row;width:92px;height:26px;padding:0 6px;gap:6px;align-items:center;justify-content:flex-start}.rb.sm i{font-size:16px;height:auto;line-height:1}
+.rb[data-c=h] i{color:#1e88e5}.rb[data-c=d] i{color:#3b5bdb}.rb[data-c=p] i{color:#e8590c}.rb[data-c=x] i{color:#2b9a4f}.rb[data-c=i] i{color:#2b9a4f}
+.gal{border:1px solid var(--ribbon-border);border-radius:4px;margin:2px 8px;padding:2px}.gal .rb{width:78px}
+.colors{display:flex;gap:4px;margin:8px 0 6px}.rg .lbl{font-size:11px;color:#777;align-self:center;margin:0 6px}
+#quick{flex:none;height:34px;display:flex;align-items:center;gap:2px;padding:0 8px;background:#fff;border-bottom:1px solid var(--ribbon-border)}
+.qb{border:1px solid transparent;background:none;border-radius:4px;min-width:28px;height:26px;cursor:pointer;font-size:15px;color:#4b5b74}.qb:hover:not(:disabled){background:#eef1f6}.qb:disabled{opacity:.4;cursor:not-allowed}.qb.active{background:#dfe3ea}
+.sep{width:1px;height:18px;background:var(--ribbon-border);margin:0 6px}
+#leftPanel{background:#e4e6ea;width:170px}.thumb{background:none}.thumb.active{border-color:#8a94a6;background:#d5d9e0}
+#viewer{background:#f1f2f4}
+#statusbar{height:30px;background:#fff;color:#333;border-top:1px solid var(--ribbon-border);gap:2px;font-size:12px;padding:0 10px}
+#statusbar .grow{flex:1}#pageInput{width:44px;text-align:center;border:1px solid #cfd3d9;border-radius:3px;height:22px;margin:0 4px}#statusbar #zoomSlider{width:130px;margin:0 8px}#zoomText{min-width:44px;text-align:right}

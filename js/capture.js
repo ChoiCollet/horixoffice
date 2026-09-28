@@ -20,7 +20,7 @@ const CAPTURE = {
     this.active = !this.active;
     const c = $("captureCanvas");
     c.style.display = this.active ? "block" : "none";
-    $("t_capture").classList.toggle("active", this.active);
+    document.querySelectorAll('[data-a="capture"]').forEach((b) => b.classList.toggle("on", this.active));
     if (this.active) showToast("캡처할 영역을 마우스로 드래그하세요.");
   },
 

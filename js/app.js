@@ -1,62 +1,74 @@
-/* =========================================================
-   app.js — 리본 탭 전환 및 전체 이벤트 연결
-   ========================================================= */
+/* app.js — 리본/메뉴/상태바 이벤트 연결 (data-a 속성 기반) */
+const ACT = {
+  open: () => $("fileInput").click(),
+  save: () => STATE.fileBytes && downloadBytes(STATE.fileBytes, STATE.fileName, "application/pdf"),
+  print: () => PRINTMOD.open(),
+  zoomIn: () => setZoom(0.15), zoomOut: () => setZoom(-0.15),
+  z100: () => { STATE.fitMode = "custom"; STATE.scale = 1; renderCurrentPage(); },
+  fitPage: () => setFitMode("page"), fitWidth: () => setFitMode("width"), rotate: rotatePage,
+  present: () => PRESENT.open(STATE.currentPage), presentStart: () => PRESENT.open(1),
+  merge: () => MERGE.open(), capture: () => CAPTURE.toggle(),
+  select: () => ANNOTATE.setTool("select"),
+  undo: () => ANNOTATE.undo(), clearPage: () => ANNOTATE.clearPage(), export: () => ANNOTATE.exportPDF(),
+  annoToggle: () => {
+    ANNOTATE.visible = !ANNOTATE.visible;
+    document.querySelectorAll('[data-a="annoToggle"]').forEach((b) => b.classList.toggle("on", ANNOTATE.visible));
+    ANNOTATE.redraw();
+  },
+  pane: () => { const p = $("rightPanel"); p.hidden = !p.hidden; if (STATE.pdfDoc) renderCurrentPage(); },
+  first: () => goToPage(1), prev: () => goToPage(STATE.currentPage - 1),
+  next: () => goToPage(STATE.currentPage + 1), last: () => goToPage(STATE.numPages),
+  close: () => location.reload(),
+  fullscreen: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(),
+  convert: () => showToast("HWP·DOCX·PPTX·XLSX·그림 변환은 서버가 필요해 아직 지원하지 않아요."),
+  soon: () => showToast("아직 준비 중인 기능이에요."),
+  extract: async () => {
+    const txt = prompt("추출할 쪽 번호 (예: 1,3,5-7)");
+    if (!txt) return;
+    const pages = parsePageRange(txt, STATE.numPages);
+    if (!pages.length) return showToast("올바른 쪽 번호가 아니에요.");
+    showLoading("쪽을 추출하는 중…");
+    try {
+      const src = await PDFLib.PDFDocument.load(STATE.fileBytes);
+      const out = await PDFLib.PDFDocument.create();
+      (await out.copyPages(src, pages.map((p) => p - 1))).forEach((p) => out.addPage(p));
+      downloadBytes(await out.save(), replaceExt(STATE.fileName, "_추출.pdf"), "application/pdf");
+    } catch (e) { showToast("쪽 추출 중 문제가 발생했어요."); } finally { hideLoading(); }
+  },
+};
 
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-a]").forEach((b) =>
+    b.addEventListener("click", () => { closeFileMenu(); ACT[b.dataset.a] && ACT[b.dataset.a](); }));
 
-  /* ---- 리본 탭 전환 ---- */
-  document.querySelectorAll(".ribbon-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".ribbon-tab").forEach((t) => t.classList.remove("active"));
-      document.querySelectorAll(".ribbon-panel").forEach((p) => p.classList.remove("active"));
-      tab.classList.add("active");
-      document.querySelector(`.ribbon-panel[data-panel="${tab.dataset.tab}"]`).classList.add("active");
-    });
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab,.panel").forEach((e) => e.classList.remove("active"));
+    t.classList.add("active");
+    document.querySelector(`.panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
+  }));
+
+  const closeFileMenu = () => { $("fileMenu").hidden = true; $("fileBtn").classList.remove("open"); };
+  window.closeFileMenu = closeFileMenu;
+  $("fileBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    $("fileMenu").hidden = !$("fileMenu").hidden;
+    $("fileBtn").classList.toggle("open", !$("fileMenu").hidden);
   });
+  document.addEventListener("click", (e) => { if (!e.target.closest("#fileWrap")) closeFileMenu(); });
 
-  /* ---- 파일 열기 ---- */
-  $("openBtn").addEventListener("click", () => $("fileInput").click());
-  $("emptyOpenBtn").addEventListener("click", () => $("fileInput").click());
-  $("fileInput").addEventListener("change", (e) => {
-    if (e.target.files[0]) loadPDFFromFile(e.target.files[0]);
-    e.target.value = "";
-  });
-
-  $("saveOrigBtn").addEventListener("click", () => {
-    if (!STATE.fileBytes) return;
-    downloadBytes(STATE.fileBytes, STATE.fileName, "application/pdf");
-  });
-
-  /* ---- 페이지 이동 ---- */
-  $("prevBtn").addEventListener("click", () => goToPage(STATE.currentPage - 1));
-  $("nextBtn").addEventListener("click", () => goToPage(STATE.currentPage + 1));
+  $("emptyOpenBtn").addEventListener("click", ACT.open);
+  $("fileInput").addEventListener("change", (e) => { if (e.target.files[0]) loadPDFFromFile(e.target.files[0]); e.target.value = ""; });
   $("pageInput").addEventListener("change", (e) => goToPage(parseInt(e.target.value, 10) || 1));
+  $("zoomSlider").addEventListener("input", (e) => { STATE.fitMode = "custom"; STATE.scale = e.target.value / 100; renderCurrentPage(); });
 
-  /* ---- 확대/축소/맞춤/회전 ---- */
-  $("zoomOutBtn").addEventListener("click", () => setZoom(-0.15));
-  $("zoomInBtn").addEventListener("click", () => setZoom(0.15));
-  $("fitBtn").addEventListener("click", () => setFitMode("page"));
-  $("rotateBtn").addEventListener("click", rotatePage);
+  document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".tr").forEach((x) => x.classList.remove("on"));
+    b.classList.add("on"); $("transitionSelect").value = b.dataset.tr;
+  }));
 
-  $("v_fitWidth").addEventListener("click", () => setFitMode("width"));
-  $("v_fitPage").addEventListener("click", () => setFitMode("page"));
-  $("v_100").addEventListener("click", () => { STATE.fitMode = "custom"; STATE.scale = 1; renderCurrentPage(); });
-  $("v_toggleThumb").addEventListener("click", () => {
-    const el = $("leftPanel");
-    el.style.display = (el.style.display === "none") ? "" : "none";
-  });
-  $("v_toggleAnno").addEventListener("click", (e) => {
-    ANNOTATE.visible = !ANNOTATE.visible;
-    e.currentTarget.classList.toggle("active", ANNOTATE.visible);
-    ANNOTATE.redraw();
-  });
-  $("v_present").addEventListener("click", () => PRESENT.open(STATE.currentPage));
-
-  /* ---- 인쇄 ---- */
-  $("printBtn").addEventListener("click", () => PRINTMOD.open());
+  // 인쇄 모달
   $("rangeSelect").addEventListener("change", (e) => {
-    $("customRangeWrap").style.display = e.target.value === "custom" ? "block" : "none";
-    PRINTMOD.updatePreview();
+    $("customRangeWrap").style.display = e.target.value === "custom" ? "block" : "none"; PRINTMOD.updatePreview();
   });
   ["customRange", "reversePrint", "orientationSelect", "paperSize", "fitToPage"].forEach((id) => {
     $(id).addEventListener("input", () => PRINTMOD.updatePreview());
@@ -64,55 +76,30 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("executePrint").addEventListener("click", () => PRINTMOD.execute());
 
-  /* ---- 주석 ---- */
-  document.querySelectorAll(".atool").forEach((btn) => {
-    btn.addEventListener("click", () => ANNOTATE.setTool(btn.dataset.tool));
-  });
-  document.querySelectorAll(".rcolor").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".rcolor").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-      ANNOTATE.color = btn.dataset.color;
-    });
-  });
+  // 주석
+  document.querySelectorAll(".atool").forEach((b) => b.addEventListener("click", () => ANNOTATE.setTool(b.dataset.tool)));
+  document.querySelectorAll(".rcolor").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".rcolor").forEach((x) => x.classList.remove("selected"));
+    b.classList.add("selected"); ANNOTATE.color = b.dataset.color;
+  }));
   $("strokeWidth").addEventListener("change", (e) => { ANNOTATE.width = Number(e.target.value); });
-  $("annoUndo").addEventListener("click", () => ANNOTATE.undo());
-  $("annoClearPage").addEventListener("click", () => ANNOTATE.clearPage());
-  $("annoExport").addEventListener("click", () => ANNOTATE.exportPDF());
-  ANNOTATE.initPointerEvents();
+  ANNOTATE.initPointerEvents(); CAPTURE.initPointerEvents();
 
-  /* ---- 프레젠테이션 ---- */
-  $("p_fromStart").addEventListener("click", () => PRESENT.open(1));
-  $("p_fromCurrent").addEventListener("click", () => PRESENT.open(STATE.currentPage));
-  $("presentExit").addEventListener("click", () => PRESENT.close());
-
-  /* ---- 도구: 병합 ---- */
-  $("t_merge").addEventListener("click", () => MERGE.open());
+  // 병합 / 프레젠테이션 / 최근 파일
   $("mergeAddBtn").addEventListener("click", () => $("mergeFileInput").click());
-  $("mergeFileInput").addEventListener("change", (e) => {
-    if (e.target.files.length) MERGE.addFiles(e.target.files);
-    e.target.value = "";
-  });
+  $("mergeFileInput").addEventListener("change", (e) => { if (e.target.files.length) MERGE.addFiles(e.target.files); e.target.value = ""; });
   $("mergeExecute").addEventListener("click", () => MERGE.execute());
-
-  /* ---- 도구: 캡처 ---- */
-  $("t_capture").addEventListener("click", () => CAPTURE.toggle());
-  CAPTURE.initPointerEvents();
-
-  /* ---- 최근 파일 ---- */
+  $("presentExit").addEventListener("click", () => PRESENT.close());
   $("clearRecentBtn").addEventListener("click", () => RECENT.clear());
 
-  /* ---- 창 크기 변경 시 fit 모드 재계산 ---- */
-  window.addEventListener("resize", () => {
-    if (STATE.pdfDoc && STATE.fitMode !== "custom") renderCurrentPage();
-  });
-
-  /* ---- 키보드 단축키 (본문 포커스 시) ---- */
+  window.addEventListener("resize", () => { if (STATE.pdfDoc && STATE.fitMode !== "custom") renderCurrentPage(); });
   document.addEventListener("keydown", (e) => {
-    if ($("presentOverlay").classList.contains("open")) return;
-    if (!STATE.pdfDoc) return;
-    if (document.activeElement === $("pageInput") || document.activeElement.tagName === "TEXTAREA") return;
-    if (e.key === "ArrowLeft") goToPage(STATE.currentPage - 1);
-    if (e.key === "ArrowRight") goToPage(STATE.currentPage + 1);
+    const k = e.ctrlKey && e.key.toLowerCase();
+    if (k === "o") { e.preventDefault(); ACT.open(); }
+    else if (k === "p" && STATE.pdfDoc) { e.preventDefault(); ACT.print(); }
+    else if (k === "s" && STATE.pdfDoc) { e.preventDefault(); ACT.save(); }
+    if ($("presentOverlay").classList.contains("open") || !STATE.pdfDoc) return;
+    if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+    if (e.key === "ArrowLeft") ACT.prev(); if (e.key === "ArrowRight") ACT.next();
   });
 });

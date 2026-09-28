@@ -28,6 +28,7 @@ const RECENT = {
   render() {
     const wrap = $("recentList");
     const items = this.list();
+    $("fileRecent").innerHTML = items.map((i, n) => `<button class="mi dim" data-a="open"><span>${n + 1}  ${escapeHtml(i.name)}</span></button>`).join("");
     if (!items.length) {
       wrap.innerHTML = '<div class="propText" style="color:#9aa0a8">아직 연 파일이 없어요.</div>';
       return;
