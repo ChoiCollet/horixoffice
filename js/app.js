@@ -72,6 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sel = document.querySelector("#pref_annocolor_row .rcolor.selected");
     if (sel) PREFS.data.annoColor = sel.dataset.color;
     PREFS.save();
+    $("leftPanel").style.display = PREFS.data.thumbs ? "" : "none";
     if (STATE.pdfDoc) { ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth; syncAnnoUI(); }
     closeModal("settingsWin");
     showToast("설정을 저장했어요.");
