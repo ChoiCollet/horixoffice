@@ -5,11 +5,14 @@ const NEED = 1, DIS = 2;
 const PREFS_KEY = "horix_prefs_v1";
 const PREFS = {
   data: Object.assign(
-    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a" },
+    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light" },
     (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; } })()
   ),
   save() { localStorage.setItem(PREFS_KEY, JSON.stringify(this.data)); },
-  applySkin() { document.documentElement.style.setProperty("--brand", this.data.skin); },
+  applySkin() {
+    document.documentElement.style.setProperty("--brand", this.data.skin);
+    document.documentElement.dataset.skinMode = this.data.skinMode || "light";
+  },
 };
 
 function syncAnnoUI() {
@@ -32,6 +35,38 @@ function makeBlankPDF(orient) {
   })();
 }
 
+let pendingCloseAction = null;
+
+function resetDocument() {
+  STATE.pdfDoc = null; STATE.fileBytes = null; STATE.fileName = "제목 없음.pdf"; STATE.numPages = 0;
+  STATE.currentPage = 1; STATE.rotation = 0; STATE.fitMode = "custom"; STATE.scale = 1.2;
+  $("pageWrap").style.display = "none"; $("empty").style.display = "";
+  $("pageTotal").textContent = "0"; $("pageInput").value = "0";
+  $("thumbs").innerHTML = ""; $("thumbCount").textContent = "0";
+  $("docTitle").textContent = "HorixOffice";
+  $("docInfo").textContent = "파일을 열면 문서 정보가 표시됩니다.";
+  setControlsEnabled(false);
+  ANNOTATE.reset(0);
+  showToast("문서를 닫았어요.");
+}
+
+async function attemptQuit() {
+  try { window.close(); } catch (e) { /* 무시 */ }
+  setTimeout(() => {
+    if (!window.closed) showToast("브라우저 정책상 웹페이지가 스스로 탭을 닫을 수 없어요. 이 탭을 직접 닫아 주세요.");
+  }, 250);
+}
+
+function withUnsavedCheck(proceed) {
+  if (STATE.pdfDoc && ANNOTATE.hasAny()) {
+    pendingCloseAction = proceed;
+    $("confirmSaveMsg").textContent = `${STATE.fileName.replace(/\.pdf$/i, "")}을(를) 저장할까요?`;
+    openModal("confirmSaveWin"); centerWin($("confirmSaveWin"));
+  } else {
+    proceed();
+  }
+}
+
 Object.assign(ACT, {
   saveAs: () => {
     if (!STATE.fileBytes) return showToast("먼저 PDF를 열어주세요.");
@@ -43,6 +78,8 @@ Object.assign(ACT, {
   newBlankP: () => makeBlankPDF("portrait"),
   newBlankL: () => makeBlankPDF("landscape"),
   openRecent: (name) => RECENT.openByName(name),
+  closeDoc: () => { if (!STATE.pdfDoc) return; withUnsavedCheck(resetDocument); },
+  quit: () => withUnsavedCheck(attemptQuit),
   settings: () => {
     $("pref_fit").value = PREFS.data.fit;
     $("pref_thumbs").checked = PREFS.data.thumbs;
@@ -52,8 +89,11 @@ Object.assign(ACT, {
     openModal("settingsWin"); centerWin($("settingsWin"));
   },
   skin: () => {
+    document.querySelector(`input[name=skinMode][value="${PREFS.data.skinMode || "light"}"]`).checked = true;
+    $("skinCustomRow").hidden = (PREFS.data.skinMode || "light") !== "custom";
     document.querySelectorAll("#skinRow .rcolor").forEach((b) =>
       b.classList.toggle("selected", b.dataset.color === PREFS.data.skin));
+    $("skinCustomPicker").value = PREFS.data.skin;
     openModal("skinWin"); centerWin($("skinWin"));
   },
 });
@@ -79,14 +119,21 @@ Object.assign(ACT, {
     const ok = (f) => (!perm || perm.includes(f) ? "허용" : "제한");
     const row = (k, v) => `<div class="drow"><label>${k}</label><div>${escapeHtml(v || "-")}</div></div>`;
     const n = STATE.fileBytes.byteLength;
-    $("dp_g").innerHTML = row("파일 이름", STATE.fileName) + row("종류", "PDF 문서") + row("위치", "브라우저에서 연 파일") +
+    const modified = new Date(STATE.fileModified).toLocaleString("ko-KR");
+    $("dp_g").innerHTML =
+      `<div class="docTop"><div class="docIcon">PDF</div><div class="drow" style="flex:1"><div>${escapeHtml(STATE.fileName)}</div></div></div>` +
+      row("종류", "PDF 문서") + row("위치", "브라우저에서 연 파일") +
       row("크기", `${(n / 1048576).toFixed(2)} MB (${n.toLocaleString()} Bytes)`) +
-      row("수정한 날짜", new Date(STATE.fileModified).toLocaleString("ko-KR"));
-    $("dp_s").innerHTML = row("제목", i.Title) + row("작성자", i.Author) + row("주제", i.Subject) + row("키워드", i.Keywords) +
-      row("만든 프로그램", i.Creator) + row("PDF 생성기", i.Producer) + row("PDF 버전", i.PDFFormatVersion) +
-      row("만든 날짜", fmtDate(i.CreationDate)) + row("고친 날짜", fmtDate(i.ModDate)) + row("쪽수", STATE.numPages + "쪽");
-    $("dp_c").innerHTML = row("암호/권한 제한", perm ? "있음" : "없음") + row("인쇄", ok(F.PRINT)) + row("복사", ok(F.COPY)) +
-      row("내용 수정", ok(F.MODIFY_CONTENTS)) + row("주석 수정", ok(F.MODIFY_ANNOTATIONS));
+      '<hr style="border:0;border-top:1px solid #e3e5ea;margin:12px 0">' +
+      row("만든 날짜", modified) + row("수정한 날짜", modified);
+    $("dp_s").innerHTML = row("제목", i.Title) + row("주제", i.Subject) + row("지은이", i.Author) +
+      `<div class="drow tall"><label>키워드</label><div>${escapeHtml(i.Keywords || "-")}</div></div>` +
+      '<hr style="border:0;border-top:1px solid #e3e5ea;margin:12px 0">' +
+      row("PDF 어플리케이션", i.Creator) + row("PDF 생산자", i.Producer);
+    $("dp_c").innerHTML = row("보안 방식", perm ? "보안 있음" : "보안 없음") + row("인쇄", ok(F.PRINT)) +
+      row("문서 구성", ok(F.ASSEMBLE)) + row("복사", ok(F.COPY)) + row("접근성을 위한 복사", ok(F.COPY_FOR_ACCESSIBILITY)) +
+      row("주석 편집", ok(F.MODIFY_ANNOTATIONS)) + row("양식 필드 채우기", ok(F.FILL_INTERACTIVE_FORMS)) +
+      row("서명", ok(F.FILL_INTERACTIVE_FORMS));
     openModal("docWin"); centerWin($("docWin"));
   },
 });
@@ -139,6 +186,90 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".dt").forEach((x) => x.classList.toggle("active", x === t));
     ["g", "s", "c"].forEach((k) => ($("dp_" + k).hidden = k !== t.dataset.dt));
   }));
+
+  // 도움말(?) 자리표시자
+  document.querySelectorAll(".fhelp").forEach((h) => h.addEventListener("click", () => showToast("도움말은 준비 중이에요.")));
+
+  // 주석 기본 색상 / 스킨 강조 색상 스와치 — 위임 방식(나중에 추가되는 사용자 정의 색도 동작하도록)
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("#pref_annocolor_row .rcolor, #skinRow .rcolor");
+    if (!b) return;
+    b.parentElement.querySelectorAll(".rcolor").forEach((x) => x.classList.remove("selected"));
+    b.classList.add("selected");
+    if (b.closest("#skinRow")) {
+      document.documentElement.style.setProperty("--brand", b.dataset.color);
+      $("skinCustomPicker").value = b.dataset.color;
+    }
+  });
+
+  // 스킨 설정: 모드 라디오(즉시 미리보기) / 사용자 정의 색 추가·삭제 / 배경 그림
+  document.querySelectorAll('input[name="skinMode"]').forEach((r) => r.addEventListener("change", () => {
+    document.documentElement.dataset.skinMode = r.value;
+    $("skinCustomRow").hidden = r.value !== "custom";
+  }));
+  $("skinCustomPicker").addEventListener("input", (e) => {
+    document.documentElement.style.setProperty("--brand", e.target.value);
+    document.querySelectorAll("#skinRow .rcolor").forEach((x) => x.classList.toggle("selected", x.dataset.color === e.target.value));
+  });
+  $("skinAddCustom").addEventListener("click", () => {
+    const c = $("skinCustomPicker").value;
+    if (document.querySelector(`#skinRow [data-color="${c}"]`)) return showToast("이미 있는 색이에요.");
+    const btn = document.createElement("button");
+    btn.className = "rcolor selected"; btn.style.background = c; btn.dataset.color = c;
+    document.querySelectorAll("#skinRow .rcolor").forEach((x) => x.classList.remove("selected"));
+    $("skinRow").appendChild(btn);
+  });
+  $("skinRemoveCustom").addEventListener("click", () => {
+    const sel = document.querySelector("#skinRow .rcolor.selected");
+    if (sel) sel.remove(); else showToast("삭제할 색을 먼저 선택해 주세요.");
+  });
+  $("skinFilePick").addEventListener("click", () => $("skinFileInput").click());
+  $("skinFileInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      $("skinFileName").value = file.name;
+      $("skinPreviewBox").style.backgroundImage = `url(${reader.result})`;
+      $("skinPreviewBox").textContent = "";
+      $("ribbon").style.backgroundImage = `url(${reader.result})`;
+    };
+    reader.readAsDataURL(file);
+  });
+  $("skinFileClear").addEventListener("click", () => {
+    $("skinFileName").value = ""; $("skinFileInput").value = "";
+    $("skinPreviewBox").style.backgroundImage = ""; $("skinPreviewBox").textContent = "";
+    $("ribbon").style.backgroundImage = "";
+  });
+  $("skinSave").addEventListener("click", () => {
+    PREFS.data.skinMode = document.querySelector('input[name="skinMode"]:checked').value;
+    const sel = document.querySelector("#skinRow .rcolor.selected");
+    if (sel) PREFS.data.skin = sel.dataset.color;
+    else if (PREFS.data.skinMode === "custom") PREFS.data.skin = $("skinCustomPicker").value;
+    PREFS.save();
+    PREFS.applySkin();
+    closeModal("skinWin");
+    showToast("스킨을 적용했어요.");
+  });
+  // 취소/닫기를 누르면 저장 안 된 미리보기를 되돌림
+  $("skinWin").addEventListener("click", (e) => { if (e.target.closest("[data-close]")) PREFS.applySkin(); });
+
+  // 저장 여부 확인 창 (문서 닫기 / 끝 전에 주석 등 변경사항이 있을 때)
+  $("confirmSaveYes").addEventListener("click", async () => {
+    closeModal("confirmSaveWin");
+    await ANNOTATE.exportPDF();
+    const fn = pendingCloseAction; pendingCloseAction = null;
+    if (fn) fn();
+  });
+  $("confirmSaveNo").addEventListener("click", () => {
+    closeModal("confirmSaveWin");
+    const fn = pendingCloseAction; pendingCloseAction = null;
+    if (fn) fn();
+  });
+  $("confirmSaveCancel").addEventListener("click", () => {
+    closeModal("confirmSaveWin");
+    pendingCloseAction = null;
+  });
 });
 
 /* ---- 떠 있는 창: 드래그로 이동, 클릭하면 맨 앞으로 ---- */
@@ -164,7 +295,7 @@ document.querySelectorAll(".fwin").forEach((w) => {
 
 /* ---- 단축키 ---- */
 const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "save", "f5": "presentStart", "shift+f5": "present",
-  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture" };
+  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture", "alt+x": "quit", "ctrl+f4": "closeDoc" };
 let chord = 0;
 document.addEventListener("keydown", (e) => {
   if ($("presentOverlay").classList.contains("open")) return;
@@ -174,7 +305,7 @@ document.addEventListener("keydown", (e) => {
   if (chord && Date.now() - chord < 1500 && key === "i" && !mod) { chord = 0; e.preventDefault(); return ACT.docinfo(); }
   if (e.ctrlKey && key === "q") { chord = Date.now(); e.preventDefault(); return; }
   const k = (e.ctrlKey ? "ctrl+" : "") + (e.altKey ? "alt+" : "") + (e.shiftKey ? "shift+" : "") + key;
-  if (SC[k]) { e.preventDefault(); if (STATE.pdfDoc || SC[k] === "open") ACT[SC[k]](); return; }
+  if (SC[k]) { e.preventDefault(); if (STATE.pdfDoc || SC[k] === "open" || SC[k] === "quit") ACT[SC[k]](); return; }
   if (!mod && STATE.pdfDoc && key === "arrowleft") ACT.prev();
   if (!mod && STATE.pdfDoc && key === "arrowright") ACT.next();
 });

@@ -503,3 +503,65 @@ input.rnum { width: 46px; text-align: center; }
 
 /* button 요소가 된 최근 파일 항목 초기화 */
 button.recentItem { border: 0; background: none; width: 100%; text-align: left; cursor: pointer; }
+
+/* ===== 문서정보/인쇄/설정/스킨 창 공통 레이아웃 (도움말+닫기 헤더, 오른쪽 세로 버튼) ===== */
+.fhead{display:flex;align-items:center}
+.fhead .fgrow{flex:1}
+.fhelp{color:#8f95a0;font-size:13px;margin-right:12px;cursor:default;user-select:none;width:16px;height:16px;border:1px solid #c7cbd2;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+.fhelp:hover{color:#555;border-color:#999}
+.fbody2{display:flex;gap:18px;padding:16px}
+.fmain{flex:1;min-width:0;max-height:70vh;overflow:auto}
+.factions{display:flex;flex-direction:column;gap:8px;padding-top:2px;flex:none}
+.factions .btn{width:118px;text-align:center}
+
+.docTop{display:flex;gap:14px;align-items:center;margin-bottom:4px}
+.docIcon{width:56px;height:70px;flex:none;background:linear-gradient(160deg,var(--brand),var(--brand-dark));border-radius:6px 16px 6px 6px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;letter-spacing:.5px;box-shadow:0 2px 6px rgba(0,0,0,.18)}
+.drow.tall div{min-height:74px;white-space:pre-wrap}
+
+#previewPaper{border:1px solid #ccc;background:#fff;display:flex;align-items:center;justify-content:center;min-height:220px;min-width:220px}
+.printerRow{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.prn{width:92px;border:1px solid var(--ribbon-border);border-radius:6px;padding:8px 6px;text-align:center;font-size:11px;color:#777}
+.prn .pic{display:block;font-size:20px;margin-bottom:4px}
+.prn.on{border-color:#2f6fed;background:#eef3ff;color:#222;font-weight:600}
+.prn.dis{opacity:.45}
+.previewNav{margin-top:10px}
+.previewNav input[type=range]{width:100%}
+.previewNavRow{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:4px;font-size:12px;color:var(--text-dim)}
+
+.skinModes{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.skinModes label{display:flex;align-items:center;gap:8px;font-size:13px}
+.skinCustomRow{display:flex;align-items:center;gap:8px;margin:10px 0 6px 24px;flex-wrap:wrap}
+.skinCustomRow input[type=color]{width:30px;height:28px;border:1px solid #ccc;border-radius:4px;padding:0;background:none}
+.skinFileRow{display:flex;gap:6px;margin-top:6px}
+.skinFileRow input[type=text]{flex:1;padding:6px 8px;border:1px solid var(--ribbon-border);border-radius:4px;background:#f7f7f8;color:#666}
+.skinPreviewBox{margin-top:10px;height:78px;border:1px dashed var(--ribbon-border);border-radius:6px;background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:12px}
+.warnIcon{font-size:30px;color:#e0a400;flex:none;line-height:1}
+
+/* ===== 스킨: 연한 회색 / 어둡게 모드 ===== */
+html[data-skin-mode="gray"]{--ribbon-bg:#e6e8eb;--ribbon-border:#ccd0d6;--panel-bg:#edeff2;--panel-border:#d3d7dc}
+html[data-skin-mode="gray"] #viewer{background:#c3c7cd}
+
+html[data-skin-mode="dark"]{--ribbon-bg:#2b2e34;--ribbon-border:#3c3f46;--panel-bg:#25272c;--panel-border:#3c3f46;--text:#e7e8ea;--text-dim:#a7abb3}
+html[data-skin-mode="dark"] body{background:#1c1e22}
+html[data-skin-mode="dark"] #titlebar,
+html[data-skin-mode="dark"] #menurow,
+html[data-skin-mode="dark"] #ribbon,
+html[data-skin-mode="dark"] #quick,
+html[data-skin-mode="dark"] #statusbar{background:#25272c;color:#e7e8ea;border-color:#3c3f46}
+html[data-skin-mode="dark"] .tab,html[data-skin-mode="dark"] .filebtn{color:#cfd2d8}
+html[data-skin-mode="dark"] .tab:hover,html[data-skin-mode="dark"] .filebtn:hover{background:#33363c}
+html[data-skin-mode="dark"] .tab.active{color:#fff}
+html[data-skin-mode="dark"] .rb,html[data-skin-mode="dark"] .qb{color:#dfe1e5}
+html[data-skin-mode="dark"] .rb i{color:#b9c0cc}
+html[data-skin-mode="dark"] .rb:hover:not(:disabled),html[data-skin-mode="dark"] .qb:hover:not(:disabled){background:#3a3d44}
+html[data-skin-mode="dark"] #leftPanel,html[data-skin-mode="dark"] #rightPanel{background:#202226;border-color:#3c3f46}
+html[data-skin-mode="dark"] #viewer{background:#101114}
+html[data-skin-mode="dark"] #docTitle,html[data-skin-mode="dark"] #titlebar nav a{color:#cfd2d8}
+html[data-skin-mode="dark"] #fileMenu,html[data-skin-mode="dark"] #dd,html[data-skin-mode="dark"] .fwin{background:#2a2c31;color:#e7e8ea;border-color:#3c3f46}
+html[data-skin-mode="dark"] .mi:hover,html[data-skin-mode="dark"] #dd .mi:hover{background:#33363c}
+html[data-skin-mode="dark"] .fhead{background:#242629;border-color:#3c3f46}
+html[data-skin-mode="dark"] .drow div,
+html[data-skin-mode="dark"] .fbody .field select,
+html[data-skin-mode="dark"] .fbody .field input[type=text],
+html[data-skin-mode="dark"] .skinFileRow input[type=text]{background:#1f2124;border-color:#3c3f46;color:#e7e8ea}
+html[data-skin-mode="dark"] .thumb{background:#242629}

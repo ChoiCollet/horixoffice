@@ -46,11 +46,22 @@ function getSelectedPages() {
 }
 
 const PRINTMOD = {
+  previewPage: 1,
+
   open() {
     if (!STATE.pdfDoc) return;
     $("customRange").value = "";
     document.querySelector("input[name=prange][value=all]").checked = true;
+    this.previewPage = STATE.currentPage;
+    $("previewSlider").max = STATE.numPages;
+    $("previewSlider").value = this.previewPage;
     openModal("printWin"); centerWin($("printWin"));
+    this.updatePreview();
+  },
+
+  setPreviewPage(n) {
+    this.previewPage = Math.max(1, Math.min(STATE.numPages, n));
+    $("previewSlider").value = this.previewPage;
     this.updatePreview();
   },
 
@@ -58,16 +69,12 @@ const PRINTMOD = {
     const pages = getSelectedPages();
     const canvas = $("previewCanvas");
     const ctx = canvas.getContext("2d");
-    if (!pages.length) {
-      canvas.width = 200; canvas.height = 280;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      $("previewText").textContent = "선택된 쪽이 없어요.";
-      return;
-    }
+    $("previewPageLabel").textContent = `${this.previewPage} / ${STATE.numPages}`;
+
     const [paperW, paperH] = PAPER_SIZES_MM[$("paperSize").value];
     let orient = getOrient();
     if (orient === "auto") {
-      const page = await STATE.pdfDoc.getPage(pages[0]);
+      const page = await STATE.pdfDoc.getPage(this.previewPage);
       const vp = page.getViewport({ scale: 1 });
       orient = vp.width > vp.height ? "landscape" : "portrait";
     }
@@ -80,7 +87,7 @@ const PRINTMOD = {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const page = await STATE.pdfDoc.getPage(pages[0]);
+    const page = await STATE.pdfDoc.getPage(this.previewPage);
     const base = page.getViewport({ scale: 1 });
     let drawScale = Math.min(canvas.width / base.width, canvas.height / base.height);
     if (!$("fitToPage").checked) drawScale = Math.min(drawScale, canvas.width / base.width);
@@ -93,7 +100,8 @@ const PRINTMOD = {
     const dy = (canvas.height - vp.height) / 2;
     ctx.drawImage(off, dx, dy);
 
-    $("previewText").textContent = `${Math.round(pw)} mm X ${Math.round(ph)} mm · ${pages.length}쪽 선택됨`;
+    $("previewText").textContent = `${Math.round(pw)} mm X ${Math.round(ph)} mm` +
+      (pages.length ? ` · 인쇄 시 ${pages.length}쪽` : " · 선택된 인쇄 범위가 없어요");
   },
 
   async execute() {

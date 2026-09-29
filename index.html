@@ -7,7 +7,7 @@
 <div id="app">
 <div id="titlebar"><a class="logo" href="index.html" title="HorixOffice"><b>H</b></a><div id="docTitle">HorixOffice</div>
 <nav><a href="about.html">사이트 소개</a><a href="contact.html">문의</a><a href="privacy.html">개인정보처리방침</a><button class="qb" data-a="fullscreen" title="전체 화면">⤢</button></nav></div>
-<div id="menurow"><div id="fileWrap"><button class="filebtn" id="fileBtn">파일</button><div id="fileMenu" hidden><button class="mi" data-a="open"><span>불러오기(O)…</span><kbd>Ctrl+O</kbd></button><button class="mi" data-a="convert"><span>PDF를 오피스 문서로 변환하기(P)…</span><kbd></kbd></button><button class="mi" data-a="save"><span>저장하기(S)</span><kbd>Ctrl+S</kbd></button><button class="mi" data-a="saveAs"><span>다른 이름으로 저장하기(A)…</span><kbd>Alt+V</kbd></button><hr><div class="mi has-sub"><span>문서 시작 도우미(B)</span><kbd>&rsaquo;</kbd><div class="sub"><button class="mi" data-a="newBlankP"><span>빈 문서 만들기 (세로 A4)</span><kbd></kbd></button><button class="mi" data-a="newBlankL"><span>빈 문서 만들기 (가로 A4)</span><kbd></kbd></button><button class="mi" data-a="soon"><span>서식 문서로 시작 (준비 중)</span><kbd></kbd></button></div></div><hr><button class="mi" data-a="docinfo"><span>문서 정보(D)…</span><kbd>Ctrl+Q,I</kbd></button><button class="mi" data-a="print"><span>인쇄(C)…</span><kbd>Ctrl+P</kbd></button><hr><button class="mi" data-a="settings"><span>사용자 설정(U)…</span><kbd></kbd></button><button class="mi" data-a="skin"><span>스킨 설정(E)…</span><kbd></kbd></button><hr><div id="fileRecent"></div><hr><button class="mi" data-a="close"><span>문서 닫기(F)</span><kbd>Ctrl+F4</kbd></button></div></div><span class="vsep"></span><div class="tabbox"><button class="tab active" data-tab="home">홈</button><button class="tabv" data-dd="home" title="홈 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="view">보기</button><button class="tabv" data-dd="view" title="보기 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="annot">주석</button><button class="tabv" data-dd="annot" title="주석 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="present">프레젠테이션</button><button class="tabv" data-dd="present" title="프레젠테이션 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="tools">도구</button><button class="tabv" data-dd="tools" title="도구 메뉴"></button></div><div id="dd" hidden></div></div>
+<div id="menurow"><div id="fileWrap"><button class="filebtn" id="fileBtn">파일</button><div id="fileMenu" hidden><button class="mi" data-a="open"><span>불러오기(O)…</span><kbd>Ctrl+O</kbd></button><button class="mi" data-a="convert"><span>PDF를 오피스 문서로 변환하기(P)…</span><kbd></kbd></button><button class="mi" data-a="save"><span>저장하기(S)</span><kbd>Ctrl+S</kbd></button><button class="mi" data-a="saveAs"><span>다른 이름으로 저장하기(A)…</span><kbd>Alt+V</kbd></button><hr><div class="mi has-sub"><span>문서 시작 도우미(B)</span><kbd>&rsaquo;</kbd><div class="sub"><button class="mi" data-a="newBlankP"><span>빈 문서 만들기 (세로 A4)</span><kbd></kbd></button><button class="mi" data-a="newBlankL"><span>빈 문서 만들기 (가로 A4)</span><kbd></kbd></button><button class="mi" data-a="soon"><span>서식 문서로 시작 (준비 중)</span><kbd></kbd></button></div></div><hr><button class="mi" data-a="docinfo"><span>문서 정보(D)…</span><kbd>Ctrl+Q,I</kbd></button><button class="mi" data-a="print"><span>인쇄(C)…</span><kbd>Ctrl+P</kbd></button><hr><button class="mi" data-a="settings"><span>사용자 설정(U)…</span><kbd></kbd></button><button class="mi" data-a="skin"><span>스킨 설정(E)…</span><kbd></kbd></button><hr><div id="fileRecent"></div><hr><button class="mi" data-a="closeDoc"><span>문서 닫기(F)</span><kbd>Ctrl+F4</kbd></button><button class="mi" data-a="quit"><span>끝(G)</span><kbd>Alt+X</kbd></button></div></div><span class="vsep"></span><div class="tabbox"><button class="tab active" data-tab="home">홈</button><button class="tabv" data-dd="home" title="홈 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="view">보기</button><button class="tabv" data-dd="view" title="보기 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="annot">주석</button><button class="tabv" data-dd="annot" title="주석 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="present">프레젠테이션</button><button class="tabv" data-dd="present" title="프레젠테이션 메뉴"></button></div><div class="tabbox"><button class="tab" data-tab="tools">도구</button><button class="tabv" data-dd="tools" title="도구 메뉴"></button></div><div id="dd" hidden></div></div>
 <div id="ribbon"><div class="panel active" data-panel="home"><div class="rg"><button class="rb " data-a="soon" ><i>⧉</i><span>복사하기</span></button><button class="rb " data-a="soon" ><i>▤</i><span>모두<br>선택</span></button></div><div class="rg"><button class="rb " data-a="soon" ><i>⌕</i><span>찾기</span></button></div><div class="rg"><button class="rb on" data-a="select" data-need ><i>➤</i><span>선택</span></button><button class="rb " data-a="soon" ><i>✋</i><span>손도구</span></button><button class="rb " id="t_capture" data-a="capture" data-need ><i>⛶</i><span>화면<br>캡처</span></button><button class="rb " data-a="capture" data-need ><i>⇱</i><span>선택 영역<br>내보내기</span></button></div><div class="rg"><button class="rb " data-a="present" data-need ><i>▶</i><span>프레젠테이션</span></button><button class="rb " data-a="soon" ><i>☰</i><span>쪽 보기</span></button><button class="rb " data-a="rotate" data-need ><i>↻</i><span>회전</span></button></div><div class="rg"><button class="rb " data-a="zoomOut" data-need ><i>⊖</i><span>축소</span></button><button class="rb " data-a="zoomIn" data-need ><i>⊕</i><span>확대</span></button></div><div class="rg"><div class="stack"><button class="rb sm" data-a="z100" data-need ><i>⌕</i><span>100%</span></button><button class="rb sm" data-a="fitPage" data-need ><i>▢</i><span>쪽 맞춤</span></button><button class="rb sm" data-a="fitWidth" data-need ><i>↔</i><span>폭 맞춤</span></button></div></div><div class="rg"><button class="rb " data-a="pane" ><i>◧</i><span>작업창</span></button></div><div class="rg"><button class="rb " data-a="merge" ><i>⊞</i><span>PDF<br>병합</span></button></div><div class="rg"><button class="rb " data-a="convert" data-c="h"><i>한</i><span>HWP로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="d"><i>W</i><span>DOCX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="p"><i>P</i><span>PPTX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="x"><i>X</i><span>XLSX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="i"><i>▣</i><span>그림으로<br>변환하기</span></button></div></div><div class="panel" data-panel="view"><div class="rg"><button class="rb " data-a="present" data-need ><i>▶</i><span>프레젠테이션</span></button><button class="rb " data-a="soon" ><i>☰</i><span>쪽 보기</span></button><button class="rb " data-a="rotate" data-need ><i>↻</i><span>회전</span></button></div><div class="rg"><button class="rb " data-a="zoomOut" data-need ><i>⊖</i><span>축소</span></button><button class="rb " data-a="zoomIn" data-need ><i>⊕</i><span>확대</span></button></div><div class="rg"><div class="stack"><button class="rb sm" data-a="z100" data-need ><i>⌕</i><span>100%</span></button><button class="rb sm" data-a="fitPage" data-need ><i>▢</i><span>쪽 맞춤</span></button><button class="rb sm" data-a="fitWidth" data-need ><i>↔</i><span>폭 맞춤</span></button></div></div><div class="rg"><button class="rb " data-a="pane" ><i>◧</i><span>작업창</span></button></div><div class="rg"><button class="rb on" id="v_toggleAnno" data-a="annoToggle" data-need ><i>▨</i><span>주석<br>표시</span></button></div></div><div class="panel" data-panel="annot"><div class="rg"><button class="rb on" id="v_toggleAnno" data-a="annoToggle" data-need ><i>▨</i><span>주석<br>표시</span></button></div><div class="rg"><button class="rb atool" data-tool="line" data-need><i>╱</i><span>선<br>그리기</span></button><button class="rb atool" data-tool="arrow" data-need><i>↘</i><span>화살표<br>그리기</span></button><button class="rb atool" data-tool="rect" data-need><i>▭</i><span>직사각형<br>그리기</span></button><button class="rb atool" data-tool="ellipse" data-need><i>◯</i><span>타원<br>그리기</span></button><button class="rb atool" data-tool="free" data-need><i>✎</i><span>자유형<br>그리기</span></button><button class="rb atool" data-tool="note" data-need><i>🗒</i><span>스티커노트</span></button><button class="rb atool" data-tool="highlight" data-need><i>🖍</i><span>강조</span></button><button class="rb atool" data-tool="underline" data-need><i>가̲</i><span>밑줄</span></button><button class="rb atool" data-tool="strike" data-need><i>가̶</i><span>취소선</span></button></div><div class="rg"><div class="colors" id="colorRow"><button class="rcolor selected" style="background:#e2231a" data-color="#e2231a"></button><button class="rcolor" style="background:#f2a900" data-color="#f2a900"></button><button class="rcolor" style="background:#1d8a4c" data-color="#1d8a4c"></button><button class="rcolor" style="background:#2f6fed" data-color="#2f6fed"></button><button class="rcolor" style="background:#1c1e22" data-color="#1c1e22"></button></div><span class="lbl">색상</span><select class="rsel" id="strokeWidth"><option value="2">얇게</option><option value="4" selected>보통</option><option value="7">굵게</option></select></div><div class="rg"><button class="rb " data-a="undo" data-need ><i>↩</i><span>실행 취소</span></button><button class="rb " data-a="clearPage" data-need ><i>🧹</i><span>현재 쪽<br>지우기</span></button><button class="rb " data-a="export" data-need ><i>📥</i><span>주석 포함<br>저장</span></button></div></div><div class="panel" data-panel="present"><div class="rg"><button class="rb " data-a="presentStart" data-need ><i>▶</i><span>처음부터</span></button><button class="rb " data-a="present" data-need ><i>⏵</i><span>현재<br>쪽부터</span></button></div><div class="rg gal"><button class="rb tr on" data-tr="none" ><i>▭</i><span>없음</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>닦아내기</span></button><button class="rb tr" data-tr="slide" ><i>▭</i><span>밀어내기</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>계단 모양…</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>모자이크</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>빗질하기</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>실선 무늬</span></button><button class="rb tr" data-tr="x" disabled title="지원하지 않는 효과"><i>▭</i><span>자르기</span></button><button class="rb tr" data-tr="fade" ><i>▭</i><span>밝기 변화</span></button><select id="transitionSelect" hidden><option value="none" selected>없음</option><option value="fade">fade</option><option value="slide">slide</option></select></div></div><div class="panel" data-panel="tools"><div class="rg"><button class="rb on" data-a="select" data-need ><i>➤</i><span>선택</span></button><button class="rb " data-a="soon" ><i>✋</i><span>손도구</span></button><button class="rb " id="t_capture" data-a="capture" data-need ><i>⛶</i><span>화면<br>캡처</span></button><button class="rb " data-a="capture" data-need ><i>⇱</i><span>선택 영역<br>내보내기</span></button></div><div class="rg"><button class="rb " data-a="soon" ><i>📖</i><span>한컴<br>사전</span></button></div><div class="rg"><button class="rb " data-a="soon" ><i>⚙</i><span>실시간<br>검색 설정</span></button></div><div class="rg"><button class="rb " data-a="extract" data-need ><i>⧉</i><span>쪽<br>추출하기</span></button><button class="rb " data-a="merge" ><i>⊞</i><span>PDF<br>병합</span></button></div><div class="rg"><button class="rb " data-a="convert" data-c="h"><i>한</i><span>HWP로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="d"><i>W</i><span>DOCX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="p"><i>P</i><span>PPTX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="x"><i>X</i><span>XLSX로<br>변환하기</span></button><button class="rb " data-a="convert" data-c="i"><i>▣</i><span>그림으로<br>변환하기</span></button></div></div></div>
 <div id="quick"><button class="qb" data-a="open" title="불러오기">📂</button><button class="qb" data-a="save" title="저장" data-need>💾</button><span class="sep"></span><button class="qb" data-a="print" title="인쇄" data-need>🖨</button><span class="sep"></span><button class="qb" data-a="undo" title="실행 취소" data-need>↩</button><button class="qb" data-a="soon" title="다시 실행">↪</button><span class="sep"></span><button class="qb" data-a="select" title="선택" data-need>➤</button><button class="qb" data-a="soon" title="손도구">✋</button><button class="qb" data-a="capture" title="화면 캡처" data-need>⛶</button><button class="qb" data-a="capture" title="선택 영역 내보내기" data-need>⇱</button><span class="sep"></span><button class="qb" data-a="zoomOut" title="축소" data-need>⊖</button><button class="qb" data-a="zoomIn" title="확대" data-need>⊕</button></div>
 <div id="content"><aside id="leftPanel"><div class="panelTitle">페이지 (<span id="thumbCount">0</span>)</div><div id="thumbs"></div></aside>
@@ -24,8 +24,33 @@
 <input type="file" id="mergeFileInput" accept="application/pdf" multiple style="display:none">
 
 <!-- 인쇄 모달 -->
-<div class="fwin" id="printWin" style="width:640px"><div class="fhead">인쇄<button class="x" data-close="printWin">✕</button></div>
-<div class="fbody prt"><div class="prt-left">
+<div class="fwin fwin2" id="docWin" style="width:660px">
+<div class="fhead">문서 정보<span class="fgrow"></span><span class="fhelp" title="도움말">?</span><button class="x" data-close="docWin">✕</button></div>
+<div class="fbody2">
+<div class="fmain">
+<div class="dtabs"><button class="dt active" data-dt="g">일반</button><button class="dt" data-dt="s">문서 요약</button><button class="dt" data-dt="c">문서 보안</button></div>
+<div id="dp_g"></div><div id="dp_s" hidden></div><div id="dp_c" hidden></div>
+</div>
+<div class="factions"><button class="btn primary" data-close="docWin">확인(D)</button><button class="btn" data-close="docWin">취소</button></div>
+</div></div>
+
+<div class="fwin fwin2" id="printWin" style="width:760px">
+<div class="fhead">인쇄<span class="fgrow"></span><span class="fhelp" title="도움말">?</span><button class="x" data-close="printWin">✕</button></div>
+<div class="fbody2">
+<div class="fmain">
+<div class="field"><label>프린터 선택</label>
+<div class="printerRow">
+<div class="prn dis"><span class="pic">＋</span>프린터 추가</div>
+<div class="prn dis"><span class="pic">🖶</span>Microsoft XPS</div>
+<div class="prn dis"><span class="pic">🖶</span>Print to PDF</div>
+<div class="prn on"><span class="pic">🖶</span>HorixOffice PDF</div>
+<div class="prn dis"><span class="pic">📠</span>Fax</div>
+</div></div>
+<div class="rowFlex">
+<div class="field"><label>상태</label><input type="text" value="준비됨" disabled></div>
+<div class="field"><label><input type="checkbox" disabled> 파일로 인쇄</label></div>
+</div>
+<div class="prt"><div class="prt-left">
 <fieldset><legend>인쇄 범위</legend>
 <label><input type="radio" name="prange" value="all" checked> 모두</label><label><input type="radio" name="prange" value="current"> 현재 쪽</label>
 <label><input type="radio" name="prange" value="from"> 현재부터</label><label><input type="radio" name="prange" value="to"> 현재까지</label>
@@ -34,24 +59,85 @@
 <fieldset><legend>인쇄 매수</legend><label>매수 <input type="number" id="copies" value="1" min="1" max="99" style="width:56px"></label><label><input type="checkbox" id="collate" checked> 한 부씩 인쇄</label></fieldset>
 <fieldset><legend>용지 설정</legend><label><input type="radio" name="orient" value="portrait"> 세로</label><label><input type="radio" name="orient" value="landscape"> 가로</label><label><input type="radio" name="orient" value="auto" checked> 자동</label>
 <label>용지 크기 <select id="paperSize"><option value="A4">A4</option><option value="A3">A3</option><option value="Letter">Letter</option><option value="B5">B5</option></select></label>
-<label><input type="checkbox" id="fitToPage" checked> 용지에 맞게 크기 조정</label></fieldset></div>
-<div class="prt-right"><div id="previewText" class="helpText"></div><canvas id="previewCanvas" style="border:1px solid #ccc;margin-top:8px"></canvas></div></div>
-<div class="ffoot"><button class="btn primary" id="executePrint">인쇄용 PDF 만들기</button><button class="btn" data-close="printWin">취소</button></div></div>
-<div class="fwin" id="docWin" style="width:500px"><div class="fhead">문서 정보<button class="x" data-close="docWin">✕</button></div>
-<div class="fbody"><div class="dtabs"><button class="dt active" data-dt="g">일반</button><button class="dt" data-dt="s">문서 요약</button><button class="dt" data-dt="c">문서 보안</button></div>
-<div id="dp_g"></div><div id="dp_s" hidden></div><div id="dp_c" hidden></div></div>
-<div class="ffoot"><button class="btn primary" data-close="docWin">확인</button></div></div>
-<div class="fwin" id="settingsWin" style="width:420px"><div class="fhead">사용자 설정<button class="x" data-close="settingsWin">✕</button></div>
-<div class="fbody">
+<label><input type="checkbox" id="fitToPage" checked> 용지에 맞게 크기 조정</label></fieldset>
+</div>
+<div class="prt-right">
+<div id="previewText" class="helpText"></div>
+<div id="previewPaper"><canvas id="previewCanvas"></canvas></div>
+<div class="previewNav">
+<input type="range" id="previewSlider" min="1" value="1" max="1">
+<div class="previewNavRow"><button class="qb" id="prevPreviewPage">◀</button><span id="previewPageLabel">1 / 1</span><button class="qb" id="nextPreviewPage">▶</button></div>
+</div>
+</div></div>
+</div>
+<div class="factions"><button class="btn primary" id="executePrint">인쇄(D)</button><button class="btn" data-close="printWin">취소</button></div>
+</div></div>
+
+<div class="fwin fwin2" id="settingsWin" style="width:460px">
+<div class="fhead">사용자 설정<span class="fgrow"></span><span class="fhelp" title="도움말">?</span><button class="x" data-close="settingsWin">✕</button></div>
+<div class="fbody2">
+<div class="fmain">
 <div class="field"><label>파일을 열었을 때 기본 화면 배율</label><select id="pref_fit"><option value="custom">사용자 지정 (120%)</option><option value="width">폭 맞춤</option><option value="page">쪽 맞춤</option></select></div>
 <div class="field"><label><input type="checkbox" id="pref_thumbs" checked> 파일을 열 때 페이지 썸네일 패널 표시</label></div>
-<div class="field"><label>주석 기본 색상</label><div class="colors" id="pref_annocolor_row"><button class="rcolor selected" style="background:#e2231a" data-color="#e2231a"></button><button class="rcolor" style="background:#f2a900" data-color="#f2a900"></button><button class="rcolor" style="background:#1d8a4c" data-color="#1d8a4c"></button><button class="rcolor" style="background:#2f6fed" data-color="#2f6fed"></button><button class="rcolor" style="background:#1c1e22" data-color="#1c1e22"></button></div></div>
+<div class="field"><label>주석 기본 색상</label><div class="colors" id="pref_annocolor_row">
+<button class="rcolor selected" style="background:#e2231a" data-color="#e2231a"></button>
+<button class="rcolor" style="background:#f2a900" data-color="#f2a900"></button>
+<button class="rcolor" style="background:#1d8a4c" data-color="#1d8a4c"></button>
+<button class="rcolor" style="background:#2f6fed" data-color="#2f6fed"></button>
+<button class="rcolor" style="background:#1c1e22" data-color="#1c1e22"></button></div></div>
 <div class="field"><label>주석 기본 두께</label><select id="pref_annowidth"><option value="2">얇게</option><option value="4" selected>보통</option><option value="7">굵게</option></select></div>
-</div><div class="ffoot"><button class="btn primary" id="prefSave">저장</button><button class="btn" data-close="settingsWin">취소</button></div></div>
-<div class="fwin" id="skinWin" style="width:360px"><div class="fhead">스킨 설정<button class="x" data-close="skinWin">✕</button></div>
-<div class="fbody"><div class="field"><label>강조 색상</label><div class="colors" id="skinRow"><button class="rcolor selected" style="background:#e2231a" data-color="#e2231a"></button><button class="rcolor" style="background:#2f6fed" data-color="#2f6fed"></button><button class="rcolor" style="background:#1d8a4c" data-color="#1d8a4c"></button><button class="rcolor" style="background:#7c3aed" data-color="#7c3aed"></button><button class="rcolor" style="background:#f2a900" data-color="#f2a900"></button><button class="rcolor" style="background:#374151" data-color="#374151"></button></div></div>
-<div class="helpText">로고, 탭 밑줄, 버튼 강조색에 적용돼요.</div></div>
-<div class="ffoot"><button class="btn primary" id="skinSave">적용</button><button class="btn" data-close="skinWin">닫기</button></div></div>
+</div>
+<div class="factions"><button class="btn primary" id="prefSave">저장(D)</button><button class="btn" data-close="settingsWin">취소</button></div>
+</div></div>
+
+<div class="fwin fwin2" id="skinWin" style="width:480px">
+<div class="fhead">스킨 설정<span class="fgrow"></span><span class="fhelp" title="도움말">?</span><button class="x" data-close="skinWin">✕</button></div>
+<div class="fbody2">
+<div class="fmain">
+<div class="field"><label>모드 선택</label>
+<div class="skinModes">
+<label><input type="radio" name="skinMode" value="light" checked> 밝게</label>
+<label><input type="radio" name="skinMode" value="gray"> 연한 회색</label>
+<label><input type="radio" name="skinMode" value="dark"> 어둡게</label>
+<label><input type="radio" name="skinMode" value="custom"> 사용자 정의</label>
+</div>
+<div id="skinCustomRow" class="skinCustomRow" hidden>
+<div class="colors" id="skinRow">
+<button class="rcolor selected" style="background:#e2231a" data-color="#e2231a"></button>
+<button class="rcolor" style="background:#2f6fed" data-color="#2f6fed"></button>
+<button class="rcolor" style="background:#1d8a4c" data-color="#1d8a4c"></button>
+<button class="rcolor" style="background:#7c3aed" data-color="#7c3aed"></button>
+<button class="rcolor" style="background:#f2a900" data-color="#f2a900"></button>
+<button class="rcolor" style="background:#374151" data-color="#374151"></button>
+</div>
+<input type="color" id="skinCustomPicker" value="#e2231a" title="직접 고르기">
+<button class="rbtn small" id="skinAddCustom" title="현재 색을 프리셋에 추가">＋</button>
+<button class="rbtn small" id="skinRemoveCustom" title="선택한 프리셋 삭제">✕</button>
+</div>
+</div>
+<div class="field"><label>스킨 그림 — 도구 상자 배경용 그림 파일</label>
+<div class="skinFileRow"><input type="text" id="skinFileName" placeholder="선택된 파일 없음" readonly>
+<button class="rbtn small" id="skinFilePick" title="파일 선택">📁</button>
+<button class="rbtn small" id="skinFileClear" title="지우기">✕</button></div>
+<input type="file" id="skinFileInput" accept="image/*" hidden>
+<div id="skinPreviewBox" class="skinPreviewBox"></div>
+<div class="helpText">권장 높이: 78 픽셀 · 이 이미지는 지금 이 탭에서만 적용되고 저장되지 않아요.</div>
+</div>
+</div>
+<div class="factions"><button class="btn primary" id="skinSave">설정(D)</button><button class="btn" data-close="skinWin">취소</button></div>
+</div></div>
+
+<div class="fwin" id="confirmSaveWin" style="width:420px">
+<div class="fhead">HorixOffice<button class="x" data-close="confirmSaveWin">✕</button></div>
+<div class="fbody" style="display:flex;gap:14px;align-items:flex-start">
+<div class="warnIcon">⚠</div>
+<div id="confirmSaveMsg" style="padding-top:4px">저장할까요?</div>
+</div>
+<div class="ffoot" style="justify-content:center;gap:10px">
+<button class="btn primary" id="confirmSaveYes">저장(Y)</button>
+<button class="btn" id="confirmSaveNo">저장 안 함(N)</button>
+<button class="btn" id="confirmSaveCancel">취소(C)</button>
+</div></div>
 <!-- 스티커 노트 입력 모달 -->
 <div class="modalBackdrop" id="noteOverlay">
   <div class="modal">

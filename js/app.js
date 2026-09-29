@@ -59,12 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ACT[b.dataset.a](b.dataset.name);
   });
 
-  // 사용자 설정 / 스킨 설정 창
-  document.querySelectorAll("#pref_annocolor_row .rcolor, #skinRow .rcolor").forEach((b) =>
-    b.addEventListener("click", () => {
-      b.parentElement.querySelectorAll(".rcolor").forEach((x) => x.classList.remove("selected"));
-      b.classList.add("selected");
-    }));
+  // 사용자 설정 / 스킨 설정 창 (색상 스와치는 ui.js가 위임 방식으로 처리 — 나중에 추가되는 사용자 정의 색도 즉시 동작해야 하므로)
   $("prefSave").addEventListener("click", () => {
     PREFS.data.fit = $("pref_fit").value;
     PREFS.data.thumbs = $("pref_thumbs").checked;
@@ -76,12 +71,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (STATE.pdfDoc) { ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth; syncAnnoUI(); }
     closeModal("settingsWin");
     showToast("설정을 저장했어요.");
-  });
-  $("skinSave").addEventListener("click", () => {
-    const sel = document.querySelector("#skinRow .rcolor.selected");
-    if (sel) { PREFS.data.skin = sel.dataset.color; PREFS.save(); PREFS.applySkin(); }
-    closeModal("skinWin");
-    showToast("스킨을 적용했어요.");
   });
   PREFS.applySkin();
 
@@ -114,6 +103,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("printWin").addEventListener("input", () => PRINTMOD.updatePreview());
   $("printWin").addEventListener("change", () => PRINTMOD.updatePreview());
   $("executePrint").addEventListener("click", () => PRINTMOD.execute());
+  $("previewSlider").addEventListener("input", (e) => PRINTMOD.setPreviewPage(Number(e.target.value)));
+  $("prevPreviewPage").addEventListener("click", () => PRINTMOD.setPreviewPage(PRINTMOD.previewPage - 1));
+  $("nextPreviewPage").addEventListener("click", () => PRINTMOD.setPreviewPage(PRINTMOD.previewPage + 1));
 
   // 주석
   document.querySelectorAll(".atool").forEach((b) => b.addEventListener("click", () => ANNOTATE.setTool(b.dataset.tool)));

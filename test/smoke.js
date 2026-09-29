@@ -206,7 +206,85 @@ async function main() {
   } catch (e) { openThrew = e; }
   ok("Ctrl+O 단축키가 FSA 미지원 환경에서도 예외 없이 폴백된다", !openThrew, openThrew && openThrew.stack);
 
-  // ---- 리포트 ----
+  // 14) 문서 정보 — 새로 추가된 필드(만든 날짜, PDF 어플리케이션, 문서 구성 등)가 채워지는지
+  click($("fileBtn"));
+  click(docinfoBtn);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("문서 정보(일반)에 '만든 날짜' 행이 추가됐다", $("dp_g").innerHTML.includes("만든 날짜"));
+  ok("문서 요약에 'PDF 어플리케이션' 라벨이 쓰인다 (기존 '만든 프로그램' 대신)", $("dp_s").innerHTML.includes("PDF 어플리케이션"));
+  ok("문서 보안에 '문서 구성' 항목이 있다", $("dp_c").innerHTML.includes("문서 구성"));
+  ok("문서 보안에 '접근성을 위한 복사' 항목이 있다", $("dp_c").innerHTML.includes("접근성을 위한 복사"));
+  click($("docWin").querySelector('[data-close="docWin"]'));
+
+  // 15) 인쇄 미리보기 페이지 이동 (선택 범위와 무관하게 문서 전체를 넘겨볼 수 있어야 함)
+  click($("fileBtn"));
+  const printBtn = q('#fileMenu [data-a="print"]');
+  click(printBtn);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("인쇄 창에 페이지 이동 슬라이더가 있다", $("previewSlider").max === "3", $("previewSlider").max);
+  click($("nextPreviewPage"));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("인쇄 미리보기에서 다음 쪽으로 넘어간다", $("previewPageLabel").textContent === "2 / 3", $("previewPageLabel").textContent);
+  click($("printWin").querySelector('[data-close="printWin"]'));
+
+  // 16) 문서 닫기 — 주석 등 변경사항이 없을 때는 바로 닫혀야 함
+  click($("fileBtn"));
+  const closeDocBtn = q('#fileMenu [data-a="closeDoc"]');
+  ok("파일 메뉴에 '문서 닫기'가 있다", !!closeDocBtn);
+  click(closeDocBtn);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("변경사항이 없으면 문서 닫기가 확인창 없이 바로 실행된다", !T.STATE.pdfDoc && $("empty").style.display === "" && !$("confirmSaveWin").classList.contains("open"));
+
+  // 17) 문서 닫기 — 주석 등 변경사항이 있으면 저장할지 물어봐야 함 (저장 안 함 선택 시 그대로 닫힘)
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="newBlankP"]'));
+  await new Promise((r) => setTimeout(r, 30));
+  T.ANNOTATE.byPage[1].push({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트" });
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="closeDoc"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("주석이 있는 상태에서 문서 닫기를 누르면 저장 여부 확인창이 뜬다", $("confirmSaveWin").classList.contains("open"));
+  ok("확인창에 파일명이 들어간 안내 문구가 표시된다", $("confirmSaveMsg").textContent.includes("저장할까요"), $("confirmSaveMsg").textContent);
+  click($("confirmSaveNo"));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("'저장 안 함'을 누르면 확인창이 닫히고 문서도 닫힌다", !$("confirmSaveWin").classList.contains("open") && !T.STATE.pdfDoc);
+
+  // 18) 취소를 누르면 문서가 닫히지 않아야 함
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="newBlankP"]'));
+  await new Promise((r) => setTimeout(r, 30));
+  T.ANNOTATE.byPage[1].push({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트2" });
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="closeDoc"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  click($("confirmSaveCancel"));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("확인창에서 '취소'를 누르면 문서가 그대로 열려 있다", !!T.STATE.pdfDoc);
+
+  // 19) 끝(quit) — window.close()를 시도하고, 실패하면 안내 토스트를 띄운다
+  click($("fileBtn"));
+  const quitBtn = q('#fileMenu [data-a="quit"]');
+  ok("파일 메뉴에 '끝'이 있다", !!quitBtn);
+  let closeCalled = false;
+  window.close = () => { closeCalled = true; };
+  click(quitBtn); // 이 시점엔 주석이 남아있어(위 18번) 확인창이 먼저 떠야 함
+  await new Promise((r) => setTimeout(r, 10));
+  ok("끝을 눌러도 저장 여부 확인창이 먼저 뜬다", $("confirmSaveWin").classList.contains("open"));
+  click($("confirmSaveNo"));
+  await new Promise((r) => setTimeout(r, 400));
+  ok("'저장 안 함' 이후 실제로 window.close()가 호출된다", closeCalled);
+  ok("탭을 닫지 못하는 환경에서는 안내 토스트가 뜬다", $("toast").textContent.includes("직접 닫아"), $("toast").textContent);
+
+  // 20) 스킨 모드 — 연한 회색/어둡게로 바꾸면 html[data-skin-mode]가 즉시 바뀌는지
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="skin"]'));
+  const darkRadio = q('input[name="skinMode"][value="dark"]');
+  darkRadio.checked = true;
+  fire(darkRadio, "change");
+  ok("스킨 모드를 '어둡게'로 바꾸면 즉시 미리보기가 반영된다", window.document.documentElement.dataset.skinMode === "dark");
+  click($("skinSave"));
+  const savedSkin = JSON.parse(window.localStorage.getItem("horix_prefs_v1") || "{}");
+  ok("스킨 모드 저장 시 localStorage에도 반영된다", savedSkin.skinMode === "dark", JSON.stringify(savedSkin));
   console.log("\n=== 결과 ===");
   let fail = 0;
   for (const r of results) {
