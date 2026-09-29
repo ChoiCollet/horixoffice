@@ -1,6 +1,19 @@
 /* app.js — 리본/메뉴/상태바 이벤트 연결 (data-a 속성 기반) */
 const ACT = {
-  open: () => $("fileInput").click(),
+  open: async () => {
+    if (typeof FSA_SUPPORTED !== "undefined" && FSA_SUPPORTED) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: "PDF 파일", accept: { "application/pdf": [".pdf"] } }],
+        });
+        const file = await handle.getFile();
+        await loadPDFFromFile(file);
+        RECENT.saveHandle(file.name, handle);
+        return;
+      } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    $("fileInput").click();
+  },
   save: () => STATE.fileBytes && downloadBytes(STATE.fileBytes, STATE.fileName, "application/pdf"),
   print: () => PRINTMOD.open(),
   zoomIn: () => setZoom(0.15), zoomOut: () => setZoom(-0.15),
@@ -38,8 +51,38 @@ const ACT = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-a]").forEach((b) =>
-    b.addEventListener("click", () => { closeFileMenu(); ACT[b.dataset.a] && ACT[b.dataset.a](); }));
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#dd")) return; // 탭 ∨ 드롭다운은 ui.js가 자체 처리
+    const b = e.target.closest("[data-a]");
+    if (!b || !ACT[b.dataset.a]) return;
+    closeFileMenu();
+    ACT[b.dataset.a](b.dataset.name);
+  });
+
+  // 사용자 설정 / 스킨 설정 창
+  document.querySelectorAll("#pref_annocolor_row .rcolor, #skinRow .rcolor").forEach((b) =>
+    b.addEventListener("click", () => {
+      b.parentElement.querySelectorAll(".rcolor").forEach((x) => x.classList.remove("selected"));
+      b.classList.add("selected");
+    }));
+  $("prefSave").addEventListener("click", () => {
+    PREFS.data.fit = $("pref_fit").value;
+    PREFS.data.thumbs = $("pref_thumbs").checked;
+    PREFS.data.annoWidth = Number($("pref_annowidth").value);
+    const sel = document.querySelector("#pref_annocolor_row .rcolor.selected");
+    if (sel) PREFS.data.annoColor = sel.dataset.color;
+    PREFS.save();
+    if (STATE.pdfDoc) { ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth; syncAnnoUI(); }
+    closeModal("settingsWin");
+    showToast("설정을 저장했어요.");
+  });
+  $("skinSave").addEventListener("click", () => {
+    const sel = document.querySelector("#skinRow .rcolor.selected");
+    if (sel) { PREFS.data.skin = sel.dataset.color; PREFS.save(); PREFS.applySkin(); }
+    closeModal("skinWin");
+    showToast("스킨을 적용했어요.");
+  });
+  PREFS.applySkin();
 
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
     document.querySelectorAll(".tab,.panel").forEach((e) => e.classList.remove("active"));

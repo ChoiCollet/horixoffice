@@ -60,7 +60,7 @@ async function loadPDFFromFile(file) {
     STATE.numPages = doc.numPages;
     STATE.currentPage = 1;
     STATE.rotation = 0;
-    STATE.fitMode = "custom";
+    STATE.fitMode = typeof PREFS !== "undefined" ? PREFS.data.fit : "custom";
     STATE.scale = 1.2;
 
     $("empty").style.display = "none";
@@ -70,6 +70,11 @@ async function loadPDFFromFile(file) {
 
     setControlsEnabled(true);
     ANNOTATE.reset(STATE.numPages);
+    if (typeof PREFS !== "undefined") {
+      ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth;
+      $("leftPanel").style.display = PREFS.data.thumbs ? "" : "none";
+      if (typeof syncAnnoUI === "function") syncAnnoUI();
+    }
 
     await renderCurrentPage();
     await THUMBS.build();

@@ -489,3 +489,17 @@ input.rnum { width: 46px; text-align: center; }
 .dt{border:0;background:none;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent}.dt.active{color:#2f6fed;border-bottom-color:#2f6fed;font-weight:600}
 .drow{display:flex;align-items:center;margin-bottom:8px}.drow label{width:100px;color:#555}
 .drow div{flex:1;background:#f3f4f6;border:1px solid #ddd;padding:6px 8px;min-height:30px;word-break:break-all}
+
+/* ===== 파일 메뉴 하위메뉴 / 설정창 필드 ===== */
+#fileMenu .mi.has-sub{position:relative}
+#fileMenu .sub{display:none;position:absolute;left:100%;top:-4px;min-width:250px;background:#fff;border:1px solid #cfd3d9;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:4px 0;z-index:70}
+#fileMenu .has-sub:hover>.sub{display:block}
+.fbody .field{margin-bottom:14px}
+.fbody .field label{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px}
+.fbody .field select{padding:6px 8px;border:1px solid #cfd3d9;border-radius:4px;width:100%}
+.fbody .colors{display:flex;gap:8px}
+.fbody .colors .rcolor{width:26px;height:26px;border-radius:6px}
+.fbody .colors .rcolor.selected{outline:2px solid #333;outline-offset:1px}
+
+/* button 요소가 된 최근 파일 항목 초기화 */
+button.recentItem { border: 0; background: none; width: 100%; text-align: left; cursor: pointer; }

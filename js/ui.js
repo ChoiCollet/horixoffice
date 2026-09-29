@@ -1,5 +1,62 @@
-/* ui.js — 탭 드롭다운 메뉴 · 키보드 단축키 · 떠 있는(이동 가능한) 창 */
+/* ui.js — 탭 드롭다운 메뉴 · 키보드 단축키 · 떠 있는(이동 가능한) 창 · 사용자 설정/스킨 */
 const NEED = 1, DIS = 2;
+
+/* ---- 사용자 설정 (localStorage에 저장돼서 다음에 열 때도 적용) ---- */
+const PREFS_KEY = "horix_prefs_v1";
+const PREFS = {
+  data: Object.assign(
+    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a" },
+    (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; } })()
+  ),
+  save() { localStorage.setItem(PREFS_KEY, JSON.stringify(this.data)); },
+  applySkin() { document.documentElement.style.setProperty("--brand", this.data.skin); },
+};
+
+function syncAnnoUI() {
+  document.querySelectorAll(".rcolor[data-color]").forEach((b) => {
+    if (!b.closest("#pref_annocolor_row") && !b.closest("#skinRow"))
+      b.classList.toggle("selected", b.dataset.color === ANNOTATE.color);
+  });
+  $("strokeWidth").value = ANNOTATE.width;
+}
+
+function makeBlankPDF(orient) {
+  return (async () => {
+    showLoading("새 문서를 만드는 중…");
+    try {
+      const doc = await PDFLib.PDFDocument.create();
+      doc.addPage(orient === "landscape" ? [841.89, 595.28] : [595.28, 841.89]);
+      const bytes = await doc.save();
+      await loadPDFFromFile(new File([bytes], "새 문서.pdf", { type: "application/pdf" }));
+    } catch (e) { showToast("새 문서를 만드는 중 문제가 발생했어요."); } finally { hideLoading(); }
+  })();
+}
+
+Object.assign(ACT, {
+  saveAs: () => {
+    if (!STATE.fileBytes) return showToast("먼저 PDF를 열어주세요.");
+    const base = STATE.fileName.replace(/\.pdf$/i, "");
+    const name = prompt("저장할 파일 이름을 입력하세요.", base);
+    if (!name) return;
+    downloadBytes(STATE.fileBytes, name.replace(/\.pdf$/i, "") + ".pdf", "application/pdf");
+  },
+  newBlankP: () => makeBlankPDF("portrait"),
+  newBlankL: () => makeBlankPDF("landscape"),
+  openRecent: (name) => RECENT.openByName(name),
+  settings: () => {
+    $("pref_fit").value = PREFS.data.fit;
+    $("pref_thumbs").checked = PREFS.data.thumbs;
+    $("pref_annowidth").value = PREFS.data.annoWidth;
+    document.querySelectorAll("#pref_annocolor_row .rcolor").forEach((b) =>
+      b.classList.toggle("selected", b.dataset.color === PREFS.data.annoColor));
+    openModal("settingsWin"); centerWin($("settingsWin"));
+  },
+  skin: () => {
+    document.querySelectorAll("#skinRow .rcolor").forEach((b) =>
+      b.classList.toggle("selected", b.dataset.color === PREFS.data.skin));
+    openModal("skinWin"); centerWin($("skinWin"));
+  },
+});
 function setTr(v) {
   $("transitionSelect").value = v;
   document.querySelectorAll(".tr").forEach((x) => x.classList.toggle("on", x.dataset.tr === v));
