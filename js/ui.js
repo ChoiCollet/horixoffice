@@ -97,6 +97,129 @@ Object.assign(ACT, {
     openModal("skinWin"); centerWin($("skinWin"));
   },
 });
+
+/* ---- 찾기 ---- */
+const FINDSTATE = { lastPage: null, query: null };
+async function performFind() {
+  if (!STATE.pdfDoc) return;
+  const q = $("findText").value.trim();
+  if (!q) return;
+  const dir = document.querySelector('input[name="findDir"]:checked').value;
+  const caseSensitive = $("findCaseSensitive").checked;
+  const norm = (s) => (caseSensitive ? s : s.toLowerCase());
+  const target = norm(q);
+  const total = STATE.numPages;
+  const start = FINDSTATE.query === q ? (FINDSTATE.lastPage || STATE.currentPage) : STATE.currentPage;
+  let found = null;
+  showLoading("찾는 중…");
+  try {
+    for (let step = 1; step <= total; step++) {
+      const p = dir === "down"
+        ? (((start - 1 + step) % total) + total) % total + 1
+        : (((start - 1 - step) % total) + total) % total + 1;
+      const page = await STATE.pdfDoc.getPage(p);
+      const content = await page.getTextContent();
+      const text = content.items.map((it) => it.str).join(" ");
+      if (norm(text).includes(target)) { found = p; break; }
+    }
+  } finally { hideLoading(); }
+  if (found) {
+    goToPage(found);
+    FINDSTATE.lastPage = found; FINDSTATE.query = q;
+    if (!Array.from($("findHistory").options).some((o) => o.value === q)) {
+      const opt = document.createElement("option"); opt.value = q; $("findHistory").appendChild(opt);
+    }
+    showToast(`${found}쪽에서 찾았어요.`);
+  } else {
+    FINDSTATE.query = null;
+    showToast("찾을 수 없어요.");
+  }
+}
+
+/* ---- 작업창: 개요 / 첨부 파일 / 주석 속성 / 탐색 ---- */
+const TOOL_LABEL = { line: "선", arrow: "화살표", rect: "직사각형", ellipse: "타원", free: "자유형", highlight: "강조", underline: "밑줄", strike: "취소선", note: "스티커노트" };
+function showWorkpane(title, html) {
+  $("rightPanel").hidden = false;
+  $("workpaneSection").hidden = false;
+  $("workpaneTitle").textContent = title;
+  $("workpaneBody").innerHTML = html;
+  if (STATE.pdfDoc) renderCurrentPage();
+}
+async function resolveOutlinePage(dest) {
+  try {
+    let d = dest;
+    if (typeof d === "string") d = await STATE.pdfDoc.getDestination(d);
+    if (!d) return null;
+    return (await STATE.pdfDoc.getPageIndex(d[0])) + 1;
+  } catch (e) { return null; }
+}
+async function renderOutlineList(items, depth) {
+  let html = "";
+  for (const o of items) {
+    const page = await resolveOutlinePage(o.dest);
+    html += `<div class="wpItem" ${page ? `data-page="${page}"` : ""} style="padding-left:${depth * 14}px">
+      <span class="wpMain">${escapeHtml(o.title || "(제목 없음)")}</span>${page ? `<span class="wpSub">${page}쪽</span>` : ""}</div>`;
+    if (o.items && o.items.length) html += await renderOutlineList(o.items, depth + 1);
+  }
+  return html;
+}
+
+Object.assign(ACT, {
+  find: () => { if (!STATE.pdfDoc) return; openModal("findWin"); centerWin($("findWin")); $("findText").focus(); },
+  rotateDialog: () => { if (!STATE.pdfDoc) return; openModal("rotateWin"); centerWin($("rotateWin")); },
+  showOutline: async () => {
+    if (!STATE.pdfDoc) return;
+    showLoading("개요를 불러오는 중…");
+    try {
+      const outline = await STATE.pdfDoc.getOutline();
+      const html = (!outline || !outline.length)
+        ? '<div class="wpEmpty">이 PDF에는 개요(북마크)가 없어요.</div>'
+        : await renderOutlineList(outline, 0);
+      showWorkpane("개요", html);
+    } catch (e) { showWorkpane("개요", '<div class="wpEmpty">개요를 불러오지 못했어요.</div>'); }
+    finally { hideLoading(); }
+  },
+  showAttachments: async () => {
+    if (!STATE.pdfDoc) return;
+    showLoading("첨부 파일을 확인하는 중…");
+    try {
+      const atts = await STATE.pdfDoc.getAttachments();
+      const keys = atts ? Object.keys(atts) : [];
+      window.__attachments = atts;
+      const html = !keys.length ? '<div class="wpEmpty">첨부된 파일이 없어요.</div>' :
+        keys.map((k) => {
+          const a = atts[k];
+          const kb = a.content ? Math.round(a.content.length / 1024) : 0;
+          return `<div class="wpItem" data-att="${escapeHtml(k)}"><span class="wpMain">${escapeHtml(a.filename || k)}</span><span class="wpSub">${kb} KB</span></div>`;
+        }).join("");
+      showWorkpane("첨부 파일", html);
+    } catch (e) { showWorkpane("첨부 파일", '<div class="wpEmpty">첨부 파일을 불러오지 못했어요.</div>'); }
+    finally { hideLoading(); }
+  },
+  showAnnoProps: () => {
+    if (!STATE.pdfDoc) return;
+    const rows = [];
+    Object.keys(ANNOTATE.byPage).forEach((p) => {
+      ANNOTATE.byPage[p].forEach((s, i) => rows.push({ page: Number(p), idx: i, type: s.type, color: s.color }));
+    });
+    rows.sort((a, b) => a.page - b.page);
+    const html = !rows.length ? '<div class="wpEmpty">추가된 주석이 없어요.</div>' :
+      rows.map((r) => `<div class="wpItem" data-anno-page="${r.page}">
+        <span class="wpMain"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${r.color};margin-right:6px"></span>${r.page}쪽 · ${TOOL_LABEL[r.type] || r.type}</span>
+        <button class="wpDel" data-anno-del data-anno-page="${r.page}" data-anno-idx="${r.idx}">✕</button></div>`).join("");
+    showWorkpane("주석 속성", html);
+  },
+  showNav: () => {
+    if (!STATE.pdfDoc) return;
+    $("leftPanel").style.display = "";
+    showToast("왼쪽 페이지 탐색 패널을 열었어요.");
+  },
+  paneCloseAll: () => {
+    $("workpaneSection").hidden = true;
+    $("workpaneBody").innerHTML = "";
+  },
+});
+
 function setTr(v) {
   $("transitionSelect").value = v;
   document.querySelectorAll(".tr").forEach((x) => x.classList.toggle("on", x.dataset.tr === v));
@@ -141,14 +264,31 @@ Object.assign(ACT, {
 
 /* ---- 탭 드롭다운 메뉴 (항목: [이름, 단축키 또는 ">", 동작 또는 하위메뉴, 플래그, 체크조건]) ---- */
 const CONV = [["HWP로 변환하기(P)…", "", "convert"], ["DOCX로 변환하기(F)…", "", "convert"], ["PPTX로 변환하기(G)…", "", "convert"], ["XLSX로 변환하기(I)…", "", "convert"], ["그림으로 변환하기(J)…", "", "convert"]];
+const ROTATE_ITEMS = [
+  ["왼쪽으로 90도 회전(R)", "", "rotateCCW", NEED],
+  ["오른쪽으로 90도 회전(A)", "", "rotate", NEED],
+  "-",
+  ["회전하기(B)…", "", "rotateDialog", NEED],
+];
+const PANE_ITEMS = [
+  ["개요 보기(A)", "", "showOutline", NEED],
+  ["첨부 파일 보기(B)", "", "showAttachments", NEED],
+  ["주석 속성(C)", "", "showAnnoProps", NEED],
+  ["탐색(D)", "", "showNav", NEED],
+  ["번역(E)", "", "soon"],
+  "-",
+  ["모두 닫기(F)", "", "paneCloseAll"],
+];
 const MENUS = {
-  home: [["복사하기(C)", "Ctrl+C", "soon", NEED], ["모두 선택(S)", "Ctrl+A", "soon", NEED], "-", ["찾기(F)…", "Ctrl+F", "soon", NEED]],
+  home: [["복사하기(C)", "Ctrl+C", "soon", NEED], ["모두 선택(S)", "Ctrl+A", "soon", NEED], "-", ["찾기(F)…", "Ctrl+F", "find", NEED]],
   view: [["프레젠테이션(S)", "F5", "presentStart", NEED],
     ["쪽 보기(V)", ">", [["한 쪽씩 보기", "", "soon"], ["연속 보기", "", "soon"]]],
-    ["회전(A)", ">", [["시계 방향 90° 회전", "", "rotate", NEED], ["반시계 방향 90° 회전", "", "rotateCCW", NEED]]], "-",
-    ["작업 창(B)", ">", [["문서 정보·최근 파일 표시", "", "pane"]]], ["확대/축소(Z)…", "", "zoomTo", NEED], "-",
+    ["회전(A)", ">", ROTATE_ITEMS], "-",
+    ["작업 창(B)", ">", PANE_ITEMS], ["확대/축소(Z)…", "", "zoomTo", NEED], "-",
     ["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
     ["도구 상자(C)", ">", [["준비 중", "", "soon"]]]],
+  rotateMenu: ROTATE_ITEMS,
+  paneMenu: PANE_ITEMS,
   annot: [["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
     ...[["line", "선 그리기"], ["arrow", "화살표 그리기"], ["rect", "직사각형 그리기"], ["ellipse", "타원 그리기"], ["free", "자유형 그리기"],
       ["note", "스티커노트"], ["highlight", "강조"], ["underline", "밑줄"], ["strike", "취소선"]]
@@ -174,7 +314,10 @@ document.addEventListener("DOMContentLoaded", () => {
     window.closeFileMenu && window.closeFileMenu(); closeDD();
     if (same) return;
     dd.innerHTML = MENUS[id].map(itemHtml).join(""); dd.dataset.cur = id;
-    dd.style.left = b.parentElement.offsetLeft + "px"; dd.hidden = false;
+    const r = b.getBoundingClientRect();
+    dd.style.left = Math.round(r.left) + "px";
+    dd.style.top = Math.round(r.bottom + 2) + "px";
+    dd.hidden = false;
   }));
   $("dd").addEventListener("click", (e) => {
     const it = e.target.closest("[data-act]");
@@ -270,6 +413,45 @@ document.addEventListener("DOMContentLoaded", () => {
     closeModal("confirmSaveWin");
     pendingCloseAction = null;
   });
+
+  // 찾기
+  $("findText").addEventListener("input", () => { $("findExecute").disabled = !$("findText").value.trim(); });
+  $("findText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !$("findExecute").disabled) performFind(); });
+  $("findExecute").addEventListener("click", performFind);
+
+  // 회전하기
+  $("rotateApply").addEventListener("click", () => {
+    const deg = Number(document.querySelector('input[name="rotDeg"]:checked').value);
+    STATE.rotation = ((STATE.rotation + deg) % 360 + 360) % 360;
+    if (STATE.pdfDoc) renderCurrentPage();
+    closeModal("rotateWin");
+  });
+
+  // 작업창 결과 목록 클릭 (개요 이동 / 첨부파일 다운로드 / 주석 삭제)
+  $("workpaneBody").addEventListener("click", (e) => {
+    const del = e.target.closest("[data-anno-del]");
+    if (del) {
+      const p = Number(del.dataset.annoPage), i = Number(del.dataset.annoIdx);
+      if (ANNOTATE.byPage[p]) ANNOTATE.byPage[p].splice(i, 1);
+      if (p === STATE.currentPage) ANNOTATE.redraw();
+      ACT.showAnnoProps();
+      return;
+    }
+    const att = e.target.closest(".wpItem[data-att]");
+    if (att && window.__attachments) {
+      const a = window.__attachments[att.dataset.att];
+      if (a && a.content) downloadBytes(a.content, a.filename || att.dataset.att, "application/octet-stream");
+      return;
+    }
+    const pageItem = e.target.closest(".wpItem[data-page]");
+    if (pageItem) goToPage(Number(pageItem.dataset.page));
+  });
+
+  // 떠 있는 창 제목줄의 투명도 슬라이더
+  document.querySelectorAll(".fopacity").forEach((s) => s.addEventListener("input", (e) => {
+    const win = e.target.closest(".fwin");
+    if (win) win.style.opacity = Number(e.target.value) / 100;
+  }));
 });
 
 /* ---- 떠 있는 창: 드래그로 이동, 클릭하면 맨 앞으로 ---- */

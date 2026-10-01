@@ -120,6 +120,17 @@ document.addEventListener("DOMContentLoaded", () => {
   $("mergeAddBtn").addEventListener("click", () => $("mergeFileInput").click());
   $("mergeFileInput").addEventListener("change", (e) => { if (e.target.files.length) MERGE.addFiles(e.target.files); e.target.value = ""; });
   $("mergeExecute").addEventListener("click", () => MERGE.execute());
+  $("mergeRemoveBtn").addEventListener("click", () => MERGE.remove());
+  $("mergeUpBtn").addEventListener("click", () => MERGE.move(-1));
+  $("mergeDownBtn").addEventListener("click", () => MERGE.move(1));
+  $("mergeConfigBtn").addEventListener("click", () => MERGE.openConfig());
+  $("mcConfirm").addEventListener("click", () => MERGE.confirmConfig());
+  $("mcPrev").addEventListener("click", () => MERGE.setConfigPage(MERGE.previewPage - 1));
+  $("mcNext").addEventListener("click", () => MERGE.setConfigPage(MERGE.previewPage + 1));
+  $("mcSlider").addEventListener("input", (e) => MERGE.setConfigPage(Number(e.target.value)));
+  document.querySelectorAll('input[name="mcRange"]').forEach((r) => r.addEventListener("change", () => {
+    if (r.value === "custom") $("mcCustomRange").focus();
+  }));
   $("presentExit").addEventListener("click", () => PRESENT.close());
   $("clearRecentBtn").addEventListener("click", () => RECENT.clear());
 

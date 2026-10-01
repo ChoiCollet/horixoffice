@@ -368,16 +368,7 @@ input.rnum { width: 46px; text-align: center; }
 
 .helpText { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
 
-/* 병합 파일 목록 */
-#mergeList { list-style: none; margin: 0; padding: 0; }
-#mergeList li {
-  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
-  border: 1px solid var(--panel-border); border-radius: 5px; margin-bottom: 6px; font-size: 13px;
-  background: #fbfbfc;
-}
-#mergeList li .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#mergeList .mvbtn { border: 0; background: transparent; cursor: pointer; color: var(--text-dim); font-size: 14px; }
-#mergeList .mvbtn:hover { color: var(--text); }
+/* 병합 파일 목록 — 새 레이아웃(.mergeList)이 css/style.css 하단에 정의돼 있음 */
 
 /* 프레젠테이션 모드 */
 #presentOverlay {
@@ -565,3 +556,61 @@ html[data-skin-mode="dark"] .fbody .field select,
 html[data-skin-mode="dark"] .fbody .field input[type=text],
 html[data-skin-mode="dark"] .skinFileRow input[type=text]{background:#1f2124;border-color:#3c3f46;color:#e7e8ea}
 html[data-skin-mode="dark"] .thumb{background:#242629}
+
+/* ===== 투명도 슬라이더(창 제목줄) ===== */
+.fopacity{width:80px;margin:0 10px 0 12px}
+
+/* ===== 분할 버튼(회전/작업창 옆 ∨) ===== */
+.rbsplit{display:flex;flex-direction:column;align-items:center}
+.rbsplit .rb{margin-bottom:2px}
+.rcaret.tabv{width:64px;height:14px;border:0;background:none;cursor:pointer}
+.rcaret.tabv::after{content:"";display:block;width:6px;height:6px;border-right:1.5px solid #7a8290;border-bottom:1.5px solid #7a8290;transform:rotate(45deg);margin:-2px auto 0}
+.rcaret.tabv:hover{background:#e7e9ed}
+.rcaret.tabv:disabled{opacity:.4;cursor:not-allowed}
+
+/* #dd를 화면 좌표 기준으로 자유롭게 배치 (탭 아래든 리본 버튼 아래든) */
+#dd{position:fixed;top:auto}
+
+/* ===== 찾기 ===== */
+#findWin .field label[style]{display:block}
+#findText{width:100%;padding:7px 9px;border:1px solid var(--ribbon-border);border-radius:5px}
+
+/* ===== PDF 병합 ===== */
+.mergeRow{display:flex;gap:8px}
+.mergeList{list-style:none;margin:0;padding:0;flex:1;border:1px solid var(--panel-border);border-radius:6px;min-height:160px;max-height:280px;overflow-y:auto}
+.mergeList li{display:flex;align-items:center;gap:10px;padding:9px 10px;cursor:pointer;border-bottom:1px solid #eee}
+.mergeList li:last-child{border-bottom:0}
+.mergeList li:hover{background:#f5f6f8}
+.mergeList li.sel{background:#eef3ff}
+.mergeList .micon{width:34px;height:42px;flex:none;background:linear-gradient(160deg,var(--brand),var(--brand-dark));border-radius:4px 10px 4px 4px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800}
+.mergeList .mmeta{min-width:0;flex:1}
+.mergeList .mname{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mergeList .mrange{font-size:11px;color:var(--text-dim)}
+.mergeList .msize{font-size:11px;color:var(--text-dim)}
+.mergeReorder{display:flex;flex-direction:column;justify-content:center;gap:6px}
+.mergeReorder .rbtn{width:34px}
+.mergeToolbar{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.mtb{border:1px solid var(--ribbon-border);background:#fff;border-radius:5px;width:34px;height:30px;cursor:pointer;font-size:15px}
+.mtb.wide{width:auto;padding:0 12px;font-size:13px}
+.mtb.on{border-color:#2f6fed;color:#2f6fed}
+.mtb.danger{color:#c0261f;border-color:#e7c3c1}
+.mtb:hover{background:#f3f4f6}
+.mtb:disabled{opacity:.4;cursor:not-allowed}
+
+/* ===== PDF 병합 > 설정 (파일별 범위) ===== */
+.mcCol{flex:1;min-width:0}
+.mcPreviewBox{border:1px solid #ccc;background:#fff;min-height:220px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.mcPreviewBox canvas{max-width:100%;max-height:220px}
+#mcSlider{width:100%}
+
+/* ===== 회전하기 ===== */
+#rotateWin .field label{display:block;margin:4px 0}
+
+/* ===== 작업창(개요/첨부파일/주석속성) 결과 패널 ===== */
+#workpaneBody{font-size:12px}
+.wpItem{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 4px;border-radius:4px;cursor:pointer}
+.wpItem:hover{background:#eef0f3}
+.wpItem .wpMain{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wpItem .wpSub{color:var(--text-dim);font-size:11px}
+.wpItem .wpDel{border:0;background:none;color:#c0261f;cursor:pointer;font-size:12px}
+.wpEmpty{color:#9aa0a8;font-size:12px;padding:4px}

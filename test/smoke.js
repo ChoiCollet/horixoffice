@@ -55,13 +55,15 @@ const dom = new JSDOM(html, {
           getPage: () => Promise.resolve(fakePage()),
           getMetadata: () => Promise.resolve({ info: { Title: "테스트 문서", Author: "최서원" } }),
           getPermissions: () => Promise.resolve(null),
+          getOutline: () => Promise.resolve(null),
+          getAttachments: () => Promise.resolve(null),
         }),
       }),
     };
     window.PDFLib = {
       PDFDocument: {
         create: () => Promise.resolve({ addPage: () => {}, save: () => Promise.resolve(new Uint8Array([1, 2, 3])) }),
-        load: () => Promise.resolve({ getPageIndices: () => [0] }),
+        load: () => Promise.resolve({ getPageIndices: () => [0], getPageCount: () => 3 }),
       },
     };
   },
@@ -285,6 +287,87 @@ async function main() {
   click($("skinSave"));
   const savedSkin = JSON.parse(window.localStorage.getItem("horix_prefs_v1") || "{}");
   ok("스킨 모드 저장 시 localStorage에도 반영된다", savedSkin.skinMode === "dark", JSON.stringify(savedSkin));
+
+  // 21) 홈 파트 준비를 위해 새 문서를 다시 열어둔다 (지금까지의 흐름으로 문서가 닫혀 있을 수 있음)
+  click($("fileBtn"));
+  click(q('#fileMenu [data-a="newBlankP"]'));
+  await new Promise((r) => setTimeout(r, 30));
+
+  // 22) 찾기 — 텍스트가 없으면 찾기(D)가 비활성, 입력하면 활성화되는지
+  const findBtn = q('.panel[data-panel="home"] [data-a="find"]');
+  ok("홈 리본에 '찾기' 버튼이 있다", !!findBtn);
+  click(findBtn);
+  ok("찾기 창이 열린다", $("findWin").classList.contains("open"));
+  ok("검색어가 없으면 찾기(D)가 비활성 상태다", $("findExecute").disabled);
+  $("findText").value = "테스트";
+  fire($("findText"), "input");
+  ok("검색어를 입력하면 찾기(D)가 활성화된다", !$("findExecute").disabled);
+  click($("findWin").querySelector('[data-close="findWin"]'));
+
+  // 23) 회전 — 리본의 ∨(rcaret)를 누르면 왼쪽/오른쪽/회전하기 메뉴가 뜨는지, '회전하기'가 실제로 동작하는지
+  const rotateCaret = q('.panel[data-panel="home"] .rcaret[data-dd="rotateMenu"]');
+  ok("홈 리본 회전 버튼 옆에 ∨(하위 메뉴)가 있다", !!rotateCaret);
+  click(rotateCaret);
+  ok("회전 메뉴가 열리고 '회전하기(B)…' 항목이 있다", $("dd").innerHTML.includes("회전하기(B)"));
+  const rotateDialogItem = q('#dd [data-act="rotateDialog"]');
+  click(rotateDialogItem);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("'회전하기'를 누르면 회전 각도 선택 창이 뜬다", $("rotateWin").classList.contains("open"));
+  window.document.querySelector('input[name="rotDeg"][value="180"]').checked = true;
+  click($("rotateApply"));
+  ok("180도를 선택하고 적용하면 STATE.rotation이 180이 된다", T.STATE.rotation === 180, T.STATE.rotation);
+
+  // 24) 작업창 — ∨ 메뉴로 개요/첨부파일/주석속성을 열어보고 결과가 렌더링되는지
+  const paneCaret = q('.panel[data-panel="home"] .rcaret[data-dd="paneMenu"]');
+  ok("홈 리본 작업창 버튼 옆에도 ∨가 있다", !!paneCaret);
+  click(paneCaret);
+  click(q('#dd [data-act="showOutline"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("개요 보기 — 북마크가 없는 빈 문서라 '개요가 없다' 안내가 뜬다", $("workpaneBody").innerHTML.includes("개요") || $("workpaneBody").innerHTML.includes("없어요"));
+
+  click(paneCaret);
+  click(q('#dd [data-act="showAttachments"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("첨부 파일 보기 — 첨부가 없는 문서라 안내가 뜬다", $("workpaneBody").innerHTML.includes("없어요"));
+
+  T.ANNOTATE.byPage[1].push({ type: "highlight", color: "#f2a900", width: 4, p1: [0, 0], p2: [10, 10] });
+  click(paneCaret);
+  click(q('#dd [data-act="showAnnoProps"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("주석 속성 — 추가한 강조 주석이 목록에 나타난다", $("workpaneBody").innerHTML.includes("강조"));
+  ok("주석 속성 목록에 삭제(✕) 버튼이 있다", !!q("#workpaneBody .wpDel"));
+  click(q("#workpaneBody .wpDel"));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("삭제를 누르면 해당 주석이 지워지고 목록도 비어보인다", T.ANNOTATE.byPage[1].length === 0);
+
+  click(paneCaret);
+  click(q('#dd [data-act="paneCloseAll"]'));
+  ok("'모두 닫기'를 누르면 작업창 결과 영역이 다시 숨겨진다", $("workpaneSection").hidden);
+
+  // 25) PDF 병합 — 파일별 범위 설정까지 포함한 전체 흐름
+  const mergeBtn = q('.panel[data-panel="home"] [data-a="merge"]');
+  click(mergeBtn);
+  ok("PDF 병합 창이 열린다", $("mergeWin").classList.contains("open"));
+  const f1 = new window.File(["dummy1"], "문서A.pdf", { type: "application/pdf" });
+  const f2 = new window.File(["dummy2"], "문서B.pdf", { type: "application/pdf" });
+  await T.MERGE.addFiles([f1, f2]);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("파일 2개를 추가하면 목록에 2개가 뜬다", $("mergeList").querySelectorAll("li").length === 2);
+  ok("추가된 파일의 기본 범위는 '문서 전체'로 표시된다", $("mergeList").textContent.includes("범위: 문서 전체"));
+  ok("선택 전에는 삭제/설정 버튼이 비활성 상태다", $("mergeRemoveBtn").disabled && $("mergeConfigBtn").disabled);
+  click($("mergeList").querySelector('li[data-i="0"]'));
+  ok("파일을 선택하면 삭제/설정 버튼이 활성화된다", !$("mergeRemoveBtn").disabled && !$("mergeConfigBtn").disabled);
+  await T.MERGE.openConfig();
+  await new Promise((r) => setTimeout(r, 10));
+  ok("설정(⚙) 창이 열린다", $("mergeConfigWin").classList.contains("open"));
+  window.document.querySelector('input[name="mcRange"][value="custom"]').checked = true;
+  $("mcCustomRange").value = "1";
+  click($("mcConfirm"));
+  ok("일부분(1쪽)으로 설정하면 목록에 그 범위가 표시된다", $("mergeList").textContent.includes("범위: 1"));
+  click($("mergeUpBtn"));
+  ok("↑ 버튼을 누르면 순서가 바뀌지 않는다 (이미 첫 번째라 비활성)", $("mergeUpBtn").disabled);
+  click($("mergeDownBtn"));
+  ok("↓ 버튼을 누르면 선택한 파일이 뒤로 이동한다", T.MERGE.files[1].name === "문서A.pdf", T.MERGE.files.map((f) => f.name));
   console.log("\n=== 결과 ===");
   let fail = 0;
   for (const r of results) {
