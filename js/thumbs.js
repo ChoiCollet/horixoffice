@@ -36,13 +36,20 @@ const THUMBS = {
   async _renderOne(pageNum, canvas) {
     try {
       const page = await STATE.pdfDoc.getPage(pageNum);
-      const base = page.getViewport({ scale: 1, rotation: STATE.rotation });
+      const rotation = getPageRotation(pageNum);
+      const base = page.getViewport({ scale: 1, rotation });
       const scale = 150 / base.width;
-      const viewport = page.getViewport({ scale, rotation: STATE.rotation });
+      const viewport = page.getViewport({ scale, rotation });
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
     } catch (e) { /* 무시 — 썸네일 실패해도 본문 보기는 정상 동작 */ }
+  },
+
+  rerenderOne(pageNum) {
+    const el = this.els[pageNum - 1];
+    const canvas = el && el.querySelector("canvas");
+    if (canvas) this._renderOne(pageNum, canvas);
   },
 
   setActive(pageNum) {

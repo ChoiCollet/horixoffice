@@ -17,6 +17,10 @@ const CAPTURE = {
   },
 
   toggle() {
+    if (!this.active && STATE.viewMode === "continuous") {
+      showToast("연속 보기에서는 화면 캡처를 쓸 수 없어요. 한 쪽씩 보기로 바꿔 주세요.");
+      return;
+    }
     this.active = !this.active;
     const c = $("captureCanvas");
     c.style.display = this.active ? "block" : "none";

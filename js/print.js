@@ -75,7 +75,7 @@ const PRINTMOD = {
     let orient = getOrient();
     if (orient === "auto") {
       const page = await STATE.pdfDoc.getPage(this.previewPage);
-      const vp = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: 1, rotation: getPageRotation(this.previewPage) });
       orient = vp.width > vp.height ? "landscape" : "portrait";
     }
     const [pw, ph] = orient === "landscape" ? [paperH, paperW] : [paperW, paperH];
@@ -88,10 +88,11 @@ const PRINTMOD = {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const page = await STATE.pdfDoc.getPage(this.previewPage);
-    const base = page.getViewport({ scale: 1 });
+    const rotation = getPageRotation(this.previewPage);
+    const base = page.getViewport({ scale: 1, rotation });
     let drawScale = Math.min(canvas.width / base.width, canvas.height / base.height);
     if (!$("fitToPage").checked) drawScale = Math.min(drawScale, canvas.width / base.width);
-    const vp = page.getViewport({ scale: drawScale });
+    const vp = page.getViewport({ scale: drawScale, rotation });
     const off = document.createElement("canvas");
     off.width = vp.width; off.height = vp.height;
     await page.render({ canvasContext: off.getContext("2d"), viewport: vp }).promise;
@@ -128,7 +129,8 @@ const PRINTMOD = {
 
       for (const pageNum of sequence) {
         const page = await STATE.pdfDoc.getPage(pageNum);
-        const base = page.getViewport({ scale: 1 });
+        const rotation = getPageRotation(pageNum);
+        const base = page.getViewport({ scale: 1, rotation });
 
         let orient = orientSetting;
         if (orient === "auto") orient = base.width > base.height ? "landscape" : "portrait";
@@ -139,7 +141,7 @@ const PRINTMOD = {
         const scale = fitToPage
           ? Math.min((pwPt) / base.width, (phPt) / base.height) * 2
           : 2;
-        const vp = page.getViewport({ scale });
+        const vp = page.getViewport({ scale, rotation });
         const canvas = document.createElement("canvas");
         canvas.width = vp.width; canvas.height = vp.height;
         await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;

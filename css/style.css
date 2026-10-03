@@ -614,3 +614,10 @@ html[data-skin-mode="dark"] .thumb{background:#242629}
 .wpItem .wpSub{color:var(--text-dim);font-size:11px}
 .wpItem .wpDel{border:0;background:none;color:#c0261f;cursor:pointer;font-size:12px}
 .wpEmpty{color:#9aa0a8;font-size:12px;padding:4px}
+
+/* ===== 연속 보기 (쪽을 위아래로 이어서 스크롤) ===== */
+#continuousWrap{display:none;flex-direction:column;align-items:center;gap:18px;width:100%;padding-bottom:20px}
+#continuousWrap.show{display:flex}
+.contPage{background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.35);line-height:0;position:relative}
+.contPage canvas{display:block}
+.contPage .contNum{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:11px;color:#eee;background:rgba(0,0,0,.4);padding:1px 8px;border-radius:10px;white-space:nowrap}

@@ -21,6 +21,10 @@ const ANNOTATE = {
   },
 
   setTool(tool) {
+    if (STATE.viewMode === "continuous" && tool !== "select") {
+      showToast("연속 보기에서는 주석을 그릴 수 없어요. 한 쪽씩 보기로 바꿔 주세요.");
+      return;
+    }
     this.tool = tool;
     document.querySelectorAll(".atool").forEach((b) =>
       b.classList.toggle("active", b.dataset.tool === tool));
@@ -213,7 +217,8 @@ const ANNOTATE = {
       for (let i = 1; i <= STATE.numPages; i++) {
         const page = await STATE.pdfDoc.getPage(i);
         const scale = 2;
-        const vp = page.getViewport({ scale, rotation: STATE.rotation });
+        const rotation = getPageRotation(i);
+        const vp = page.getViewport({ scale, rotation });
         const canvas = document.createElement("canvas");
         canvas.width = vp.width; canvas.height = vp.height;
         const ctx = canvas.getContext("2d");
@@ -224,7 +229,7 @@ const ANNOTATE = {
         const pngBytes = await new Promise((res) =>
           canvas.toBlob((b) => b.arrayBuffer().then(res), "image/png"));
         const png = await outDoc.embedPng(pngBytes);
-        const base = page.getViewport({ scale: 1, rotation: STATE.rotation });
+        const base = page.getViewport({ scale: 1, rotation });
         const outPage = outDoc.addPage([base.width, base.height]);
         outPage.drawImage(png, { x: 0, y: 0, width: base.width, height: base.height });
       }

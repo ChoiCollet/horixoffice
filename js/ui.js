@@ -39,7 +39,8 @@ let pendingCloseAction = null;
 
 function resetDocument() {
   STATE.pdfDoc = null; STATE.fileBytes = null; STATE.fileName = "제목 없음.pdf"; STATE.numPages = 0;
-  STATE.currentPage = 1; STATE.rotation = 0; STATE.fitMode = "custom"; STATE.scale = 1.2;
+  STATE.currentPage = 1; STATE.pageRotations = {}; STATE.fitMode = "custom"; STATE.scale = 1.2;
+  STATE.viewMode = "single"; CONTVIEW.destroy(); $("continuousWrap").hidden = true; $("continuousWrap").classList.remove("show");
   $("pageWrap").style.display = "none"; $("empty").style.display = "";
   $("pageTotal").textContent = "0"; $("pageInput").value = "0";
   $("thumbs").innerHTML = ""; $("thumbCount").textContent = "0";
@@ -143,7 +144,7 @@ function showWorkpane(title, html) {
   $("workpaneSection").hidden = false;
   $("workpaneTitle").textContent = title;
   $("workpaneBody").innerHTML = html;
-  if (STATE.pdfDoc) renderCurrentPage();
+  refreshView();
 }
 async function resolveOutlinePage(dest) {
   try {
@@ -164,7 +165,28 @@ async function renderOutlineList(items, depth) {
   return html;
 }
 
+function applyViewMode(mode) {
+  if (!STATE.pdfDoc || STATE.viewMode === mode) return;
+  STATE.viewMode = mode;
+  const cont = mode === "continuous";
+  $("pageWrap").style.display = cont ? "none" : "block";
+  $("continuousWrap").hidden = !cont;
+  $("continuousWrap").classList.toggle("show", cont);
+  if (cont) {
+    ANNOTATE.setTool("select");
+    if (CAPTURE.active) CAPTURE.toggle();
+    CONTVIEW.renderAll().then(() => CONTVIEW.scrollToPage(STATE.currentPage));
+    showToast("연속 보기에서는 주석 그리기·화면 캡처를 쓸 수 없어요. 한 쪽씩 보기로 돌아오면 다시 쓸 수 있어요.");
+  } else {
+    CONTVIEW.destroy();
+    renderCurrentPage();
+  }
+}
+
 Object.assign(ACT, {
+  viewModeSingle: () => applyViewMode("single"),
+  viewModeContinuous: () => applyViewMode("continuous"),
+  viewModeToggle: () => applyViewMode(STATE.viewMode === "single" ? "continuous" : "single"),
   find: () => { if (!STATE.pdfDoc) return; openModal("findWin"); centerWin($("findWin")); $("findText").focus(); },
   rotateDialog: () => { if (!STATE.pdfDoc) return; openModal("rotateWin"); centerWin($("rotateWin")); },
   showOutline: async () => {
@@ -229,10 +251,14 @@ const fmtDate = (s) => {
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}:${m[6] || "00"}` : "-";
 };
 Object.assign(ACT, {
-  rotateCCW: () => { STATE.rotation = (STATE.rotation + 270) % 360; renderCurrentPage(); },
+  rotateCCW: () => {
+    setPageRotation(STATE.currentPage, getPageRotation(STATE.currentPage) + 270);
+    THUMBS.rerenderOne(STATE.currentPage);
+    refreshView();
+  },
   zoomTo: () => {
     const v = parseInt(prompt("확대/축소 비율(%)", Math.round(STATE.scale * 100)), 10);
-    if (v >= 25 && v <= 400) { STATE.fitMode = "custom"; STATE.scale = v / 100; renderCurrentPage(); }
+    if (v >= 25 && v <= 400) { STATE.fitMode = "custom"; STATE.scale = v / 100; refreshView(); }
   },
   trNone: () => setTr("none"), trSlide: () => setTr("slide"), trFade: () => setTr("fade"),
   docinfo: async () => {
@@ -279,14 +305,19 @@ const PANE_ITEMS = [
   "-",
   ["모두 닫기(F)", "", "paneCloseAll"],
 ];
+const PAGEVIEW_ITEMS = [
+  ["한 쪽씩 보기", "", "viewModeSingle", NEED, () => STATE.viewMode === "single"],
+  ["연속 보기", "", "viewModeContinuous", NEED, () => STATE.viewMode === "continuous"],
+];
 const MENUS = {
   home: [["복사하기(C)", "Ctrl+C", "soon", NEED], ["모두 선택(S)", "Ctrl+A", "soon", NEED], "-", ["찾기(F)…", "Ctrl+F", "find", NEED]],
   view: [["프레젠테이션(S)", "F5", "presentStart", NEED],
-    ["쪽 보기(V)", ">", [["한 쪽씩 보기", "", "soon"], ["연속 보기", "", "soon"]]],
+    ["쪽 보기(V)", ">", PAGEVIEW_ITEMS],
     ["회전(A)", ">", ROTATE_ITEMS], "-",
     ["작업 창(B)", ">", PANE_ITEMS], ["확대/축소(Z)…", "", "zoomTo", NEED], "-",
     ["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
     ["도구 상자(C)", ">", [["준비 중", "", "soon"]]]],
+  pageViewMenu: PAGEVIEW_ITEMS,
   rotateMenu: ROTATE_ITEMS,
   paneMenu: PANE_ITEMS,
   annot: [["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
@@ -422,8 +453,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // 회전하기
   $("rotateApply").addEventListener("click", () => {
     const deg = Number(document.querySelector('input[name="rotDeg"]:checked').value);
-    STATE.rotation = ((STATE.rotation + deg) % 360 + 360) % 360;
-    if (STATE.pdfDoc) renderCurrentPage();
+    const range = document.querySelector('input[name="rotRange"]:checked').value;
+    if (range === "all") {
+      for (let p = 1; p <= STATE.numPages; p++) setPageRotation(p, getPageRotation(p) + deg);
+      THUMBS.els.forEach((_, idx) => THUMBS.rerenderOne(idx + 1));
+    } else {
+      setPageRotation(STATE.currentPage, getPageRotation(STATE.currentPage) + deg);
+      THUMBS.rerenderOne(STATE.currentPage);
+    }
+    refreshView();
     closeModal("rotateWin");
   });
 

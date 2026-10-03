@@ -17,7 +17,7 @@ const ACT = {
   save: () => STATE.fileBytes && downloadBytes(STATE.fileBytes, STATE.fileName, "application/pdf"),
   print: () => PRINTMOD.open(),
   zoomIn: () => setZoom(0.15), zoomOut: () => setZoom(-0.15),
-  z100: () => { STATE.fitMode = "custom"; STATE.scale = 1; renderCurrentPage(); },
+  z100: () => { STATE.fitMode = "custom"; STATE.scale = 1; refreshView(); },
   fitPage: () => setFitMode("page"), fitWidth: () => setFitMode("width"), rotate: rotatePage,
   present: () => PRESENT.open(STATE.currentPage), presentStart: () => PRESENT.open(1),
   merge: () => MERGE.open(), capture: () => CAPTURE.toggle(),
@@ -28,7 +28,7 @@ const ACT = {
     document.querySelectorAll('[data-a="annoToggle"]').forEach((b) => b.classList.toggle("on", ANNOTATE.visible));
     ANNOTATE.redraw();
   },
-  pane: () => { const p = $("rightPanel"); p.hidden = !p.hidden; if (STATE.pdfDoc) renderCurrentPage(); },
+  pane: () => { const p = $("rightPanel"); p.hidden = !p.hidden; refreshView(); },
   first: () => goToPage(1), prev: () => goToPage(STATE.currentPage - 1),
   next: () => goToPage(STATE.currentPage + 1), last: () => goToPage(STATE.numPages),
   close: () => location.reload(),
@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("emptyOpenBtn").addEventListener("click", ACT.open);
   $("fileInput").addEventListener("change", (e) => { if (e.target.files[0]) loadPDFFromFile(e.target.files[0]); e.target.value = ""; });
   $("pageInput").addEventListener("change", (e) => goToPage(parseInt(e.target.value, 10) || 1));
-  $("zoomSlider").addEventListener("input", (e) => { STATE.fitMode = "custom"; STATE.scale = e.target.value / 100; renderCurrentPage(); });
+  $("zoomSlider").addEventListener("input", (e) => { STATE.fitMode = "custom"; STATE.scale = e.target.value / 100; refreshView(); });
 
   document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => {
     document.querySelectorAll(".tr").forEach((x) => x.classList.remove("on"));
@@ -134,5 +134,5 @@ document.addEventListener("DOMContentLoaded", () => {
   $("presentExit").addEventListener("click", () => PRESENT.close());
   $("clearRecentBtn").addEventListener("click", () => RECENT.clear());
 
-  window.addEventListener("resize", () => { if (STATE.pdfDoc && STATE.fitMode !== "custom") renderCurrentPage(); });
+  window.addEventListener("resize", () => { if (STATE.pdfDoc && STATE.fitMode !== "custom") refreshView(); });
 });

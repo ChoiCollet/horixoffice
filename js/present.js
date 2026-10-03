@@ -29,9 +29,10 @@ const PRESENT = {
     const trans = $("transitionSelect").value;
 
     const vw = window.innerWidth, vh = window.innerHeight;
-    const base = page.getViewport({ scale: 1, rotation: STATE.rotation });
+    const rotation = getPageRotation(this.page);
+    const base = page.getViewport({ scale: 1, rotation });
     const scale = Math.min(vw / base.width, vh / base.height) * (window.devicePixelRatio || 1);
-    const vp = page.getViewport({ scale, rotation: STATE.rotation });
+    const vp = page.getViewport({ scale, rotation });
 
     const draw = async () => {
       canvas.width = vp.width; canvas.height = vp.height;

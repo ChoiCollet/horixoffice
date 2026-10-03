@@ -10,9 +10,13 @@ const STATE = {
   currentPage: 1,
   scale: 1.2,
   fitMode: "custom",   // 'width' | 'page' | 'custom'
-  rotation: 0,          // 0/90/180/270 (전체 문서 회전, 보기용)
+  viewMode: "single",  // 'single' | 'continuous'
+  pageRotations: {},   // { 쪽번호: 0/90/180/270, ... } — 쪽마다 따로 회전
   pageViewport: null,   // 마지막 렌더 viewport (캡처/주석 좌표 계산용)
 };
+
+function getPageRotation(p) { return STATE.pageRotations[p] || 0; }
+function setPageRotation(p, deg) { STATE.pageRotations[p] = ((deg % 360) + 360) % 360; }
 
 function $(id) { return document.getElementById(id); }
 
@@ -59,7 +63,9 @@ async function loadPDFFromFile(file) {
     STATE.pdfDoc = doc;
     STATE.numPages = doc.numPages;
     STATE.currentPage = 1;
-    STATE.rotation = 0;
+    STATE.pageRotations = {};
+    STATE.viewMode = "single";
+    if (typeof CONTVIEW !== "undefined") { CONTVIEW.destroy(); $("continuousWrap").hidden = true; $("continuousWrap").classList.remove("show"); }
     STATE.fitMode = typeof PREFS !== "undefined" ? PREFS.data.fit : "custom";
     STATE.scale = 1.2;
 
@@ -109,17 +115,17 @@ async function renderCurrentPage() {
   if (!STATE.pdfDoc) return;
   const page = await STATE.pdfDoc.getPage(STATE.currentPage);
 
-  let viewport = page.getViewport({ scale: STATE.scale, rotation: STATE.rotation });
+  let viewport = page.getViewport({ scale: STATE.scale, rotation: getPageRotation(STATE.currentPage) });
 
   if (STATE.fitMode === "width" || STATE.fitMode === "page") {
     const availW = $("viewer").clientWidth - 48;
     const availH = $("viewer").clientHeight - 48;
-    const base = page.getViewport({ scale: 1, rotation: STATE.rotation });
+    const base = page.getViewport({ scale: 1, rotation: getPageRotation(STATE.currentPage) });
     let s;
     if (STATE.fitMode === "width") s = availW / base.width;
     else s = Math.min(availW / base.width, availH / base.height);
     STATE.scale = Math.max(0.2, s);
-    viewport = page.getViewport({ scale: STATE.scale, rotation: STATE.rotation });
+    viewport = page.getViewport({ scale: STATE.scale, rotation: getPageRotation(STATE.currentPage) });
   }
 
   const canvas = $("pdfCanvas");
@@ -147,9 +153,19 @@ async function renderCurrentPage() {
   THUMBS.setActive(STATE.currentPage);
 }
 
+function refreshView() {
+  if (!STATE.pdfDoc) return;
+  return STATE.viewMode === "continuous" ? CONTVIEW.renderAll() : renderCurrentPage();
+}
+
 async function goToPage(n) {
   if (!STATE.pdfDoc) return;
   n = Math.max(1, Math.min(STATE.numPages, n));
+  if (STATE.viewMode === "continuous") {
+    STATE.currentPage = n;
+    CONTVIEW.scrollToPage(n);
+    return;
+  }
   if (n === STATE.currentPage) return;
   STATE.currentPage = n;
   await renderCurrentPage();
@@ -158,15 +174,16 @@ async function goToPage(n) {
 function setZoom(delta) {
   STATE.fitMode = "custom";
   STATE.scale = Math.max(0.25, Math.min(4, STATE.scale + delta));
-  renderCurrentPage();
+  STATE.viewMode === "continuous" ? CONTVIEW.renderAll() : renderCurrentPage();
 }
 
 function setFitMode(mode) {
   STATE.fitMode = mode;
-  renderCurrentPage();
+  STATE.viewMode === "continuous" ? CONTVIEW.renderAll() : renderCurrentPage();
 }
 
 function rotatePage() {
-  STATE.rotation = (STATE.rotation + 90) % 360;
-  renderCurrentPage();
+  setPageRotation(STATE.currentPage, getPageRotation(STATE.currentPage) + 90);
+  THUMBS.rerenderOne(STATE.currentPage);
+  STATE.viewMode === "continuous" ? CONTVIEW.renderAll() : renderCurrentPage();
 }

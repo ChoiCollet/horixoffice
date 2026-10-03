@@ -36,6 +36,7 @@ const dom = new JSDOM(html, {
     window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/png;base64,AAAA";
     window.URL.createObjectURL = () => "blob:fake";
     window.URL.revokeObjectURL = () => {};
+    window.IntersectionObserver = class { observe() {} disconnect() {} unobserve() {} };
     window.Element.prototype.scrollIntoView = () => {}; // jsdom 미구현 (실제 브라우저엔 모두 있음)
     function fakeViewport(w, h) {
       return { width: w, height: h, convertToPdfPoint: (x, y) => [x, y], convertToViewportPoint: (x, y) => [x, y] };
@@ -315,7 +316,7 @@ async function main() {
   ok("'회전하기'를 누르면 회전 각도 선택 창이 뜬다", $("rotateWin").classList.contains("open"));
   window.document.querySelector('input[name="rotDeg"][value="180"]').checked = true;
   click($("rotateApply"));
-  ok("180도를 선택하고 적용하면 STATE.rotation이 180이 된다", T.STATE.rotation === 180, T.STATE.rotation);
+  ok("180도를 선택하고 적용하면 현재 쪽의 회전값이 180이 된다 (기본 범위: 현재 쪽)", window.getPageRotation(T.STATE.currentPage) === 180, window.getPageRotation(T.STATE.currentPage));
 
   // 24) 작업창 — ∨ 메뉴로 개요/첨부파일/주석속성을 열어보고 결과가 렌더링되는지
   const paneCaret = q('.panel[data-panel="home"] .rcaret[data-dd="paneMenu"]');
@@ -368,6 +369,50 @@ async function main() {
   ok("↑ 버튼을 누르면 순서가 바뀌지 않는다 (이미 첫 번째라 비활성)", $("mergeUpBtn").disabled);
   click($("mergeDownBtn"));
   ok("↓ 버튼을 누르면 선택한 파일이 뒤로 이동한다", T.MERGE.files[1].name === "문서A.pdf", T.MERGE.files.map((f) => f.name));
+
+  // 26) 회전 — 쪽마다 따로 회전되는지 (아키텍처 변경 검증). 깨끗한 상태에서 시작.
+  T.STATE.pageRotations = {};
+  await goToPage_(1);
+  async function goToPage_(n) { T.STATE.currentPage = n; await window.renderCurrentPage(); }
+  click(q('.panel[data-panel="home"] [data-a="rotate"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("1쪽에서 회전을 누르면 1쪽만 90도가 된다", window.getPageRotation(1) === 90, window.getPageRotation(1));
+  await goToPage_(2);
+  ok("2쪽은 회전하지 않아서 0도로 남아 있다", window.getPageRotation(2) === 0);
+  click(q('.panel[data-panel="home"] [data-a="rotate"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("2쪽에서 따로 회전해도 1쪽 회전값은 그대로다", window.getPageRotation(1) === 90 && window.getPageRotation(2) === 90);
+
+  // 27) 회전하기 다이얼로그 — '문서 전체'를 고르면 각 쪽의 기존 회전값에 더해 모두 적용되는지
+  click(q('.panel[data-panel="home"] .rcaret[data-dd="rotateMenu"]'));
+  click(q('#dd [data-act="rotateDialog"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  window.document.querySelector('input[name="rotRange"][value="all"]').checked = true;
+  window.document.querySelector('input[name="rotDeg"][value="180"]').checked = true;
+  click($("rotateApply"));
+  ok("'문서 전체'로 180도를 적용하면 각 쪽의 기존 값에 180씩 더해진다 (1·2쪽은 90+180, 3쪽은 0+180)",
+    window.getPageRotation(1) === 270 && window.getPageRotation(2) === 270 && window.getPageRotation(3) === 180,
+    [1, 2, 3].map(window.getPageRotation));
+  // 28) 보기 — 쪽 보기 ∨ 메뉴 / 연속 보기 전환
+  const pvCaret = q('.panel[data-panel="view"] .rcaret[data-dd="pageViewMenu"]');
+  ok("보기 리본에 '쪽 보기' ∨ 메뉴가 있다", !!pvCaret);
+  click(pvCaret);
+  ok("쪽 보기 메뉴에 한 쪽씩/연속 보기가 있고 현재 모드(한 쪽씩)에 ✓가 붙는다",
+    $("dd").innerHTML.includes("연속 보기") && /<em>✓<\/em><span>한 쪽씩 보기/.test($("dd").innerHTML));
+  click(q('#dd [data-act="viewModeContinuous"]'));
+  await new Promise((r) => setTimeout(r, 30));
+  ok("연속 보기로 바꾸면 모든 쪽(3개)이 이어서 렌더된다", $("continuousWrap").querySelectorAll(".contPage").length === 3);
+  ok("연속 보기에서는 단일 쪽 영역이 숨겨진다", $("pageWrap").style.display === "none");
+  T.ANNOTATE.setTool("line");
+  ok("연속 보기에서 주석 도구는 선택(select)으로 막힌다", T.ANNOTATE.tool === "select");
+  await window.goToPage(2);
+  ok("연속 보기에서 쪽 이동 시 현재 쪽 번호가 갱신된다", T.STATE.currentPage === 2);
+  click(q('.panel[data-panel="view"] [data-a="viewModeToggle"]'));
+  await new Promise((r) => setTimeout(r, 30));
+  ok("쪽 보기 버튼을 다시 누르면 한 쪽씩 보기로 돌아간다", T.STATE.viewMode === "single" && $("pageWrap").style.display === "block");
+  T.ANNOTATE.setTool("line");
+  ok("한 쪽씩 보기에선 주석 도구를 다시 쓸 수 있다", T.ANNOTATE.tool === "line");
+
   console.log("\n=== 결과 ===");
   let fail = 0;
   for (const r of results) {
