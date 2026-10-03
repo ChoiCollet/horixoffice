@@ -96,6 +96,7 @@ const PRINTMOD = {
     const off = document.createElement("canvas");
     off.width = vp.width; off.height = vp.height;
     await page.render({ canvasContext: off.getContext("2d"), viewport: vp }).promise;
+    if (ANNOTATE.visible) (ANNOTATE.byPage[this.previewPage] || []).forEach((sh) => ANNOTATE.drawShape(off.getContext("2d"), sh, vp));
 
     const dx = (canvas.width - vp.width) / 2;
     const dy = (canvas.height - vp.height) / 2;
@@ -145,6 +146,7 @@ const PRINTMOD = {
         const canvas = document.createElement("canvas");
         canvas.width = vp.width; canvas.height = vp.height;
         await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+        if (ANNOTATE.visible) (ANNOTATE.byPage[pageNum] || []).forEach((sh) => ANNOTATE.drawShape(canvas.getContext("2d"), sh, vp));
 
         const pngBytes = await new Promise((res) =>
           canvas.toBlob((b) => b.arrayBuffer().then(res), "image/png")

@@ -90,7 +90,8 @@ RECENT.openByName = async (name) => {
         return showToast("파일 접근 권한이 없어서 열 수 없어요.");
     }
     const file = await handle.getFile();
-    loadPDFFromFile(file);
+    await loadPDFFromFile(file);
+    STATE.fileHandle = handle;
   } catch (e) {
     showToast("원본 파일을 찾을 수 없어요. 이동했거나 삭제된 것 같아요.");
   }

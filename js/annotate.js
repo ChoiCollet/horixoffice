@@ -1,246 +1,606 @@
 /* =========================================================
-   annotate.js — 주석 도구 (선/화살표/도형/자유형/강조/밑줄/취소선/스티커노트)
-   각 페이지마다 도형을 PDF 좌표계로 저장해 두었다가,
-   내보낼 때 페이지를 이미지로 렌더링한 뒤 그 위에 그려서 새 PDF로 합칩니다.
+   annotate.js — 주석 도구
+   - 도형은 PDF 좌표계(점 단위)로 저장돼서 확대/축소·회전해도 제자리에 있어요.
+   - 저장할 땐 원본 PDF 위에 벡터로 그려 넣어요 (글자는 그대로 선택·검색 가능, 용량도 거의 안 늘어요).
+   - 되돌리기/다시 실행은 "작업 기록"으로 관리해서 추가·삭제·이동·속성 변경을 모두 되돌릴 수 있어요.
    ========================================================= */
+
+/* ---------- 순수 함수들 (테스트 가능) ---------- */
+
+// pdf.js textContent → 가로 글줄 상자 목록 (기울어진 글자는 건너뜀)
+function textItemsFromContent(content) {
+  const out = [];
+  for (const it of content.items || []) {
+    if (!it.str || !it.str.trim() || !it.transform) continue;
+    const t = it.transform;
+    if (Math.abs(t[1]) > 0.01 || Math.abs(t[2]) > 0.01) continue;
+    const h = Math.abs(it.height || t[3]);
+    if (!(h > 0) || !(it.width > 0)) continue;
+    out.push({ x: t[4], base: t[5], w: it.width, h });
+  }
+  return out;
+}
+
+// 드래그 영역과 겹치는 글자들을 줄 단위로 묶어서 [{x0,x1,base,h}] 로
+function textLinesInSelection(items, p1, p2) {
+  const x0 = Math.min(p1[0], p2[0]), x1 = Math.max(p1[0], p2[0]);
+  const y0 = Math.min(p1[1], p2[1]), y1 = Math.max(p1[1], p2[1]);
+  const hits = items.filter((it) =>
+    it.x < x1 && it.x + it.w > x0 && it.base - it.h * 0.2 < y1 && it.base + it.h * 0.85 > y0);
+  hits.sort((a, b) => (b.base - a.base) || (a.x - b.x));
+  const lines = [];
+  for (const it of hits) {
+    const ln = lines.find((l) => Math.abs(l.base - it.base) < Math.max(l.h, it.h) * 0.4);
+    if (ln) { ln.x0 = Math.min(ln.x0, it.x); ln.x1 = Math.max(ln.x1, it.x + it.w); ln.h = Math.max(ln.h, it.h); }
+    else lines.push({ x0: it.x, x1: it.x + it.w, base: it.base, h: it.h });
+  }
+  return lines;
+}
+
+function shapeTranslate(s, dx, dy) {
+  ["p1", "p2"].forEach((k) => { if (s[k]) s[k] = [s[k][0] + dx, s[k][1] + dy]; });
+  if (s.points) s.points = s.points.map((p) => [p[0] + dx, p[1] + dy]);
+}
+
+function distToSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - x1) * dx + (py - y1) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// 저장용: 원본 PDF 위에 주석을 벡터로 그리고, 쪽 회전·스티커노트(실제 PDF 메모)까지 반영
+async function buildAnnotatedPDF(PL, bytes, byPage, rotations) {
+  const { PDFDocument, rgb, degrees, LineCapStyle, PDFName, PDFHexString, PDFArray } = PL;
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const col = (hex) => {
+    const n = parseInt(String(hex || "#000000").slice(1), 16);
+    return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+  };
+  const cap = LineCapStyle ? { lineCap: LineCapStyle.Round } : {};
+  doc.getPages().forEach((page, i) => {
+    const pn = i + 1;
+    const extra = (rotations && rotations[pn]) || 0;
+    if (extra) page.setRotation(degrees((((page.getRotation().angle || 0) + extra) % 360 + 360) % 360));
+    for (const s of (byPage && byPage[pn]) || []) {
+      const c = col(s.color), w = Math.max(0.5, s.width || 2);
+      const seg = (a, b, t) => page.drawLine({ start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] }, thickness: t || w, color: c, ...cap });
+      if (s.type === "line" || s.type === "underline" || s.type === "strike") seg(s.p1, s.p2);
+      else if (s.type === "arrow") {
+        seg(s.p1, s.p2);
+        const ang = Math.atan2(s.p2[1] - s.p1[1], s.p2[0] - s.p1[0]), len = 8 + 2 * w;
+        [-1, 1].forEach((d) => seg(s.p2, [s.p2[0] - len * Math.cos(ang + d * Math.PI / 7), s.p2[1] - len * Math.sin(ang + d * Math.PI / 7)]));
+      } else if (s.type === "rect") {
+        page.drawRectangle({ x: Math.min(s.p1[0], s.p2[0]), y: Math.min(s.p1[1], s.p2[1]),
+          width: Math.abs(s.p2[0] - s.p1[0]), height: Math.abs(s.p2[1] - s.p1[1]), borderColor: c, borderWidth: w });
+      } else if (s.type === "ellipse") {
+        const rx = Math.abs(s.p2[0] - s.p1[0]) / 2, ry = Math.abs(s.p2[1] - s.p1[1]) / 2;
+        if (rx > 0 && ry > 0) page.drawEllipse({ x: (s.p1[0] + s.p2[0]) / 2, y: (s.p1[1] + s.p2[1]) / 2, xScale: rx, yScale: ry, borderColor: c, borderWidth: w });
+      } else if (s.type === "free") {
+        const pts = s.points || [];
+        if (pts.length === 1) page.drawCircle({ x: pts[0][0], y: pts[0][1], size: w / 2, color: c });
+        for (let k = 1; k < pts.length; k++) seg(pts[k - 1], pts[k]);
+      } else if (s.type === "highlight") {
+        page.drawRectangle({ x: Math.min(s.p1[0], s.p2[0]), y: Math.min(s.p1[1], s.p2[1]),
+          width: Math.abs(s.p2[0] - s.p1[0]), height: Math.abs(s.p2[1] - s.p1[1]), color: c, opacity: 0.35 });
+      } else if (s.type === "note") {
+        const [x, y] = s.p1, half = 8;
+        page.drawRectangle({ x: x - half, y: y - half, width: half * 2, height: half * 2, color: rgb(1, 0.85, 0.2), borderColor: rgb(0.54, 0.43, 0), borderWidth: 1 });
+        page.drawLine({ start: { x, y: y + 4 }, end: { x, y: y - 1 }, thickness: 1.6, color: rgb(0.36, 0.27, 0) });
+        page.drawCircle({ x, y: y - 4.5, size: 0.9, color: rgb(0.36, 0.27, 0) });
+        const ctx = doc.context;
+        const ref = ctx.register(ctx.obj({
+          Type: "Annot", Subtype: "Text", Rect: [x - half, y - half, x + half, y + half],
+          Contents: PDFHexString.fromText(s.text || ""), Name: "Comment", C: [1, 0.85, 0.2], F: 4,
+        }));
+        let arr = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+        if (!arr) { arr = ctx.obj([]); page.node.set(PDFName.of("Annots"), arr); }
+        arr.push(ref);
+      }
+    }
+  });
+  return doc.save();
+}
+
+/* ---------- 주석 도구 본체 ---------- */
 
 const ANNOTATE = {
   tool: "select",
   color: "#e2231a",
-  width: 4,
-  byPage: {},      // { pageNum: [shape, ...] }
+  width: 4,              // 점(pt) 단위 — 확대/축소에 따라 같이 커지고 작아져요
+  pickedColor: false,    // 사용자가 직접 색을 골랐는지 (강조 기본색 처리용)
+  byPage: {},
   visible: true,
-  drawing: false,
-  cur: null,       // 현재 그리고 있는 도형
-  history: [],      // undo 스택: {page, index}
+  cur: null,
+  selected: null,
+  ops: [], redoStack: [],
+  dirty: false,
+  textCache: {},
+  noteEditing: null,
 
   reset(numPages) {
     this.byPage = {};
     for (let i = 1; i <= numPages; i++) this.byPage[i] = [];
-    this.history = [];
+    this.ops = []; this.redoStack = []; this.dirty = false;
+    this.selected = null; this.cur = null; this.textCache = {};
   },
 
+  hasAny() { return Object.values(this.byPage).some((a) => a.length); },
+  hasChanges() { return this.dirty; },
+  markDirty() { this.dirty = true; },
+
+  /* ----- 도구/색/두께 ----- */
   setTool(tool) {
     if (STATE.viewMode === "continuous" && tool !== "select") {
       showToast("연속 보기에서는 주석을 그릴 수 없어요. 한 쪽씩 보기로 바꿔 주세요.");
       return;
     }
     this.tool = tool;
-    document.querySelectorAll(".atool").forEach((b) =>
-      b.classList.toggle("active", b.dataset.tool === tool));
-    $("annoCanvas").style.pointerEvents = (tool === "select") ? "none" : "auto";
+    this.cur = null;
+    if (tool !== "select") { this.selected = null; if (!this.visible) this.setVisible(true); }
+    $("annoCanvas").style.cursor = tool === "select" ? "default" : "crosshair";
+    this.syncToolUI();
+    this.redraw();
   },
 
+  syncToolUI() {
+    document.querySelectorAll(".atool").forEach((b) => b.classList.toggle("on", b.dataset.tool === this.tool));
+    document.querySelectorAll('[data-a="select"]').forEach((b) => b.classList.toggle("on", this.tool === "select"));
+  },
+
+  setVisible(v) {
+    this.visible = v;
+    document.querySelectorAll('[data-a="annoToggle"]').forEach((b) => b.classList.toggle("on", v));
+    if (!v) this.selected = null;
+    this.redraw();
+  },
+
+  colorFor(tool) { return tool === "highlight" && !this.pickedColor ? "#ffd400" : this.color; },
+
+  setColor(c) {
+    this.color = c; this.pickedColor = true;
+    if (this.selected && this.selected.type !== "note") this.doOp({ k: "prop", shape: this.selected, before: { color: this.selected.color }, after: { color: c } });
+  },
+  setWidth(w) {
+    this.width = w;
+    const s = this.selected;
+    if (s && !["note", "highlight"].includes(s.type)) this.doOp({ k: "prop", shape: s, before: { width: s.width }, after: { width: w } });
+  },
+
+  /* ----- 작업 기록 (되돌리기/다시 실행) ----- */
+  _arr(p) { return this.byPage[p] || (this.byPage[p] = []); },
+  _pageOf(shape) { for (const p of Object.keys(this.byPage)) if (this.byPage[p].includes(shape)) return Number(p); return null; },
+
+  _apply(op, undo) {
+    switch (op.k) {
+      case "add":
+        op.shapes.forEach((s) => {
+          const a = this._arr(op.page);
+          if (!undo) a.push(s); else { const i = a.indexOf(s); if (i >= 0) a.splice(i, 1); }
+        });
+        break;
+      case "del":
+        if (!undo) op.items.forEach((it) => { const a = this._arr(op.page), i = a.indexOf(it.shape); if (i >= 0) a.splice(i, 1); });
+        else [...op.items].sort((a, b) => a.index - b.index).forEach((it) => this._arr(op.page).splice(it.index, 0, it.shape));
+        break;
+      case "move": shapeTranslate(op.shape, undo ? -op.dx : op.dx, undo ? -op.dy : op.dy); break;
+      case "prop": Object.assign(op.shape, undo ? op.before : op.after); break;
+      case "multi": (undo ? [...op.ops].reverse() : op.ops).forEach((o) => this._apply(o, undo)); break;
+    }
+  },
+
+  doOp(op) {
+    this._apply(op, false);
+    this.ops.push(op); this.redoStack = []; this.dirty = true;
+    if (this.selected && this._pageOf(this.selected) === null) this.selected = null;
+    this.redraw();
+  },
+
+  _opPage(op) {
+    if (op.page) return op.page;
+    if (op.shape) return this._pageOf(op.shape);
+    if (op.ops) return this._opPage(op.ops[0]);
+    return null;
+  },
+
+  _afterHistory(op) {
+    this.dirty = true;
+    if (this.selected && this._pageOf(this.selected) === null) this.selected = null;
+    const p = this._opPage(op);
+    if (p && p !== STATE.currentPage && STATE.viewMode === "single") goToPage(p); else this.redraw();
+  },
+
+  undo() {
+    const op = this.ops.pop();
+    if (!op) { showToast("되돌릴 작업이 없어요."); return; }
+    this._apply(op, true); this.redoStack.push(op); this._afterHistory(op);
+  },
+  redo() {
+    const op = this.redoStack.pop();
+    if (!op) { showToast("다시 실행할 작업이 없어요."); return; }
+    this._apply(op, false); this.ops.push(op); this._afterHistory(op);
+  },
+
+  addShapes(list, page) {
+    if (!list.length) return;
+    this.doOp({ k: "add", page: page || STATE.currentPage, shapes: list });
+  },
+  addShape(s) { this.addShapes([s]); },
+
+  removeAt(page, index) {
+    const shape = (this.byPage[page] || [])[index];
+    if (shape) this.doOp({ k: "del", page, items: [{ shape, index }] });
+  },
+  deleteSelected() {
+    const s = this.selected; if (!s) return false;
+    const page = this._pageOf(s); if (page === null) return false;
+    this.selected = null;
+    this.doOp({ k: "del", page, items: [{ shape: s, index: this.byPage[page].indexOf(s) }] });
+    return true;
+  },
+  clearPage() {
+    const a = this.byPage[STATE.currentPage] || [];
+    if (!a.length) { showToast("이 쪽에는 지울 주석이 없어요."); return; }
+    this.doOp({ k: "del", page: STATE.currentPage, items: a.map((shape, index) => ({ shape, index })) });
+  },
+  clearAll() {
+    const ops = Object.keys(this.byPage).filter((p) => this.byPage[p].length)
+      .map((p) => ({ k: "del", page: Number(p), items: this.byPage[p].map((shape, index) => ({ shape, index })) }));
+    if (!ops.length) { showToast("지울 주석이 없어요."); return; }
+    this.doOp({ k: "multi", ops });
+  },
+
+  /* ----- 선택 ----- */
+  select(shape) { this.selected = shape || null; this.redraw(); },
+
+  /* ----- 그리기 ----- */
   onPageRendered(w, h) {
     const c = $("annoCanvas");
     const dpr = window.devicePixelRatio || 1;
-    c.width = Math.floor(w * dpr);
-    c.height = Math.floor(h * dpr);
-    c.style.width = w + "px";
-    c.style.height = h + "px";
-    c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr);
+    c.style.width = w + "px"; c.style.height = h + "px";
+    if (this.selected && !(this.byPage[STATE.currentPage] || []).includes(this.selected)) this.selected = null;
     this.redraw();
   },
 
   redraw() {
-    const c = $("annoCanvas");
-    const ctx = c.getContext("2d");
+    const c = $("annoCanvas"), vp = STATE.pageViewport;
+    if (!c || !vp) return;
+    const ctx = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
     ctx.save();
-    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
     if (this.visible) {
-      const shapes = this.byPage[STATE.currentPage] || [];
-      shapes.forEach((s) => this.drawShape(ctx, s, STATE.pageViewport));
-      if (this.cur) this.drawShape(ctx, this.cur, STATE.pageViewport);
+      (this.byPage[STATE.currentPage] || []).forEach((s) => this.drawShape(ctx, s, vp));
+      if (this.cur) this.drawShape(ctx, this.cur, vp);
+      if (this.selected && (this.byPage[STATE.currentPage] || []).includes(this.selected)) this.drawSelection(ctx, this.selected, vp);
     }
     ctx.restore();
   },
 
   toViewport(pt, vp) { return vp.convertToViewportPoint(pt[0], pt[1]); },
 
-  drawShape(ctx, s, vp) {
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = s.color;
-    ctx.fillStyle = s.color;
-    ctx.lineWidth = s.width;
-    ctx.globalAlpha = 1;
+  vpPoints(s, vp) {
+    const P = (p) => this.toViewport(p, vp);
+    if (s.points) return s.points.map(P);
+    return [s.p1, s.p2].filter(Boolean).map(P);
+  },
 
-    if (s.type === "line" || s.type === "arrow" || s.type === "underline" || s.type === "strike") {
-      const [x1, y1] = this.toViewport(s.p1, vp);
-      const [x2, y2] = this.toViewport(s.p2, vp);
+  drawSelection(ctx, s, vp) {
+    const pts = this.vpPoints(s, vp);
+    if (!pts.length) return;
+    let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
+    let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
+    const pad = s.type === "note" ? 12 : 6 + (s.width || 2) * (vp.scale || 1) / 2;
+    ctx.save();
+    ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2; ctx.strokeStyle = "#2f6fed";
+    ctx.strokeRect(x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2);
+    ctx.restore();
+  },
+
+  drawShape(ctx, s, vp) {
+    const k = vp.scale || 1;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = s.color; ctx.fillStyle = s.color;
+    ctx.lineWidth = Math.max(1, (s.width || 2) * k);
+    ctx.globalAlpha = 1;
+    const P = (p) => this.toViewport(p, vp);
+
+    if (s.preview) { // 글자 선택 드래그 미리보기
+      const [x1, y1] = P(s.p1), [x2, y2] = P(s.p2);
+      ctx.save(); ctx.globalAlpha = 0.25;
+      ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+      ctx.restore(); return;
+    }
+    if (["line", "arrow", "underline", "strike"].includes(s.type)) {
+      const [x1, y1] = P(s.p1), [x2, y2] = P(s.p2);
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       if (s.type === "arrow") {
-        const ang = Math.atan2(y2 - y1, x2 - x1);
-        const len = 10 + s.width;
+        const ang = Math.atan2(y2 - y1, x2 - x1), len = (8 + 2 * (s.width || 2)) * k;
         ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - len * Math.cos(ang - Math.PI / 7), y2 - len * Math.sin(ang - Math.PI / 7));
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - len * Math.cos(ang + Math.PI / 7), y2 - len * Math.sin(ang + Math.PI / 7));
+        ctx.moveTo(x2, y2); ctx.lineTo(x2 - len * Math.cos(ang - Math.PI / 7), y2 - len * Math.sin(ang - Math.PI / 7));
+        ctx.moveTo(x2, y2); ctx.lineTo(x2 - len * Math.cos(ang + Math.PI / 7), y2 - len * Math.sin(ang + Math.PI / 7));
         ctx.stroke();
       }
     } else if (s.type === "rect") {
-      const [x1, y1] = this.toViewport(s.p1, vp);
-      const [x2, y2] = this.toViewport(s.p2, vp);
+      const [x1, y1] = P(s.p1), [x2, y2] = P(s.p2);
       ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
     } else if (s.type === "ellipse") {
-      const [x1, y1] = this.toViewport(s.p1, vp);
-      const [x2, y2] = this.toViewport(s.p2, vp);
-      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-      const rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
-      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      const [x1, y1] = P(s.p1), [x2, y2] = P(s.p2);
+      ctx.beginPath(); ctx.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, 0, 0, Math.PI * 2); ctx.stroke();
     } else if (s.type === "free") {
       ctx.beginPath();
-      s.points.forEach((p, i) => {
-        const [x, y] = this.toViewport(p, vp);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
+      s.points.forEach((p, i) => { const [x, y] = P(p); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      if (s.points.length === 1) { const [x, y] = P(s.points[0]); ctx.lineTo(x + 0.01, y); }
       ctx.stroke();
     } else if (s.type === "highlight") {
-      const [x1, y1] = this.toViewport(s.p1, vp);
-      const [x2, y2] = this.toViewport(s.p2, vp);
+      const [x1, y1] = P(s.p1), [x2, y2] = P(s.p2);
       ctx.globalAlpha = 0.35;
       ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       ctx.globalAlpha = 1;
     } else if (s.type === "note") {
-      const [x, y] = this.toViewport(s.p1, vp);
-      ctx.fillStyle = "#f2c200";
-      ctx.strokeStyle = "#8a6d00";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 9, y - 9, 18, 18, 3) : ctx.rect(x - 9, y - 9, 18, 18);
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#5c4600";
-      ctx.font = "bold 12px sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("!", x, y + 1);
+      const [x, y] = P(s.p1), h = 8 * k;
+      ctx.fillStyle = "#ffd933"; ctx.strokeStyle = "#8a6d00"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.rect(x - h, y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#5c4600"; ctx.font = `bold ${Math.round(12 * k)}px sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("!", x, y + 1);
     }
   },
 
-  addShape(s) {
-    this.byPage[STATE.currentPage].push(s);
-    this.history.push({ page: STATE.currentPage, index: this.byPage[STATE.currentPage].length - 1 });
-    this.redraw();
+  hitTest(v) {
+    const vp = STATE.pageViewport; if (!vp) return null;
+    const list = this.byPage[STATE.currentPage] || [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const s = list[i], k = vp.scale || 1, tol = Math.max(6, (s.width || 2) * k / 2 + 4);
+      const pts = this.vpPoints(s, vp);
+      if (!pts.length) continue;
+      const [px, py] = v;
+      let hit = false;
+      if (["line", "arrow", "underline", "strike"].includes(s.type)) hit = distToSeg(px, py, pts[0][0], pts[0][1], pts[1][0], pts[1][1]) <= tol;
+      else if (s.type === "free") { for (let j = 1; j < pts.length && !hit; j++) hit = distToSeg(px, py, ...pts[j - 1], ...pts[j]) <= tol; if (pts.length === 1) hit = Math.hypot(px - pts[0][0], py - pts[0][1]) <= tol + 2; }
+      else if (s.type === "rect") {
+        const [a, b] = pts, x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+        hit = [[x0, y0, x1, y0], [x1, y0, x1, y1], [x1, y1, x0, y1], [x0, y1, x0, y0]].some((e) => distToSeg(px, py, ...e) <= tol);
+      } else if (s.type === "ellipse") {
+        const [a, b] = pts, cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2, rx = Math.abs(b[0] - a[0]) / 2, ry = Math.abs(b[1] - a[1]) / 2;
+        if (rx > 0 && ry > 0) { const r = Math.hypot((px - cx) / rx, (py - cy) / ry); hit = Math.abs(r - 1) * Math.min(rx, ry) <= tol; }
+      } else if (s.type === "highlight") {
+        const [a, b] = pts; hit = px >= Math.min(a[0], b[0]) && px <= Math.max(a[0], b[0]) && py >= Math.min(a[1], b[1]) && py <= Math.max(a[1], b[1]);
+      } else if (s.type === "note") hit = Math.abs(px - pts[0][0]) <= 11 * k && Math.abs(py - pts[0][1]) <= 11 * k;
+      if (hit) return s;
+    }
+    return null;
   },
 
-  undo() {
-    const last = this.history.pop();
-    if (!last) { showToast("되돌릴 주석이 없어요."); return; }
-    const arr = this.byPage[last.page];
-    if (arr && arr.length) arr.splice(arr.length - 1, 1);
-    if (last.page === STATE.currentPage) this.redraw();
+  async textItems(page) {
+    if (!this.textCache[page]) {
+      try { this.textCache[page] = textItemsFromContent(await (await STATE.pdfDoc.getPage(page)).getTextContent()); }
+      catch (e) { this.textCache[page] = []; }
+    }
+    return this.textCache[page];
   },
 
-  clearPage() {
-    this.byPage[STATE.currentPage] = [];
-    this.history = this.history.filter((h) => h.page !== STATE.currentPage);
-    this.redraw();
-  },
-
-  hasAny() { return Object.values(this.byPage).some((a) => a.length); },
-
-  /* ---------- 포인터 입력 ---------- */
-
+  /* ----- 포인터 입력 ----- */
   initPointerEvents() {
     const c = $("annoCanvas");
-    let notePendingPoint = null;
+    let drag = null, startV = null;
+    const vpOf = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const toPdf = (v) => STATE.pageViewport.convertToPdfPoint(v[0], v[1]);
+    const MARKUP = ["highlight", "underline", "strike"];
 
-    const getPdfPoint = (evt) => {
-      const rect = c.getBoundingClientRect();
-      const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
-      return STATE.pageViewport.convertToPdfPoint(x, y);
+    const constrain = (a, b, tool) => {
+      let [x, y] = b; const dx = x - a[0], dy = y - a[1];
+      if (tool === "line" || tool === "arrow") {
+        const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), len = Math.hypot(dx, dy);
+        return [a[0] + len * Math.cos(ang), a[1] + len * Math.sin(ang)];
+      }
+      if (tool === "rect" || tool === "ellipse") {
+        const m = Math.max(Math.abs(dx), Math.abs(dy));
+        return [a[0] + Math.sign(dx || 1) * m, a[1] + Math.sign(dy || 1) * m];
+      }
+      return b;
     };
 
     c.addEventListener("pointerdown", (e) => {
-      if (this.tool === "select" || !STATE.pdfDoc) return;
-      const pt = getPdfPoint(e);
-
-      if (this.tool === "note") {
-        notePendingPoint = pt;
-        $("noteText").value = "";
-        openModal("noteOverlay");
+      if (!STATE.pdfDoc || e.button !== 0 || !STATE.pageViewport) return;
+      const v = vpOf(e);
+      if (this.tool === "select") {
+        if (!this.visible) return;
+        const hit = this.hitTest(v);
+        this.select(hit);
+        if (hit) { drag = { mode: "move", last: toPdf(v), dx: 0, dy: 0, shape: hit }; c.setPointerCapture(e.pointerId); }
         return;
       }
-
-      this.drawing = true;
+      if (this.tool === "note") {
+        this.notePending = toPdf(v); this.noteEditing = null;
+        $("noteText").value = ""; openModal("noteOverlay"); return;
+      }
+      startV = v;
+      const p = toPdf(v), color = this.colorFor(this.tool);
+      const w = MARKUP.includes(this.tool) ? Math.min(this.width, 2) : this.width;
+      this.cur = this.tool === "free"
+        ? { type: "free", color, width: w, points: [p] }
+        : { type: this.tool, color, width: w, p1: p, p2: p, preview: MARKUP.includes(this.tool) };
+      drag = { mode: "draw" };
       c.setPointerCapture(e.pointerId);
-      const base = { color: this.color, width: this.width };
-      if (this.tool === "free") this.cur = { type: "free", ...base, points: [pt] };
-      else this.cur = { type: this.tool, ...base, p1: pt, p2: pt };
     });
 
     c.addEventListener("pointermove", (e) => {
-      if (!this.drawing || !this.cur) return;
-      const pt = getPdfPoint(e);
-      if (this.cur.type === "free") this.cur.points.push(pt);
-      else this.cur.p2 = pt;
-      this.redraw();
+      const v = vpOf(e);
+      if (drag && drag.mode === "draw" && this.cur) {
+        const p = toPdf(e.shiftKey ? constrain(startV, v, this.tool) : v);
+        if (this.cur.type === "free") this.cur.points.push(p); else this.cur.p2 = p;
+        this.redraw();
+      } else if (drag && drag.mode === "move") {
+        const p = toPdf(v), dx = p[0] - drag.last[0], dy = p[1] - drag.last[1];
+        shapeTranslate(drag.shape, dx, dy); drag.dx += dx; drag.dy += dy; drag.last = p;
+        this.redraw();
+      } else if (STATE.pdfDoc && STATE.pageViewport && this.visible) {
+        const hit = this.tool === "select" ? this.hitTest(v) : null;
+        c.style.cursor = this.tool === "select" ? (hit ? "move" : "default") : "crosshair";
+        const pop = $("notePop");
+        if (hit && hit.type === "note") {
+          pop.textContent = hit.text || "(내용 없음)";
+          pop.style.left = e.clientX + 14 + "px"; pop.style.top = e.clientY + 14 + "px"; pop.hidden = false;
+        } else pop.hidden = true;
+      }
     });
 
-    const finish = () => {
-      if (!this.drawing || !this.cur) return;
-      this.drawing = false;
-      const s = this.cur; this.cur = null;
-      if (s.type !== "free" && Math.hypot(
-        this.toViewport(s.p2, STATE.pageViewport)[0] - this.toViewport(s.p1, STATE.pageViewport)[0],
-        this.toViewport(s.p2, STATE.pageViewport)[1] - this.toViewport(s.p1, STATE.pageViewport)[1]) < 3) {
-        this.redraw(); return; // 너무 작으면 무시
+    const finish = async () => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      if (d.mode === "move") {
+        if (Math.abs(d.dx) + Math.abs(d.dy) > 1e-6) {
+          shapeTranslate(d.shape, -d.dx, -d.dy); // 되돌려 놓고 기록을 통해 다시 적용
+          this.doOp({ k: "move", shape: d.shape, dx: d.dx, dy: d.dy });
+        }
+        return;
       }
+      const s = this.cur; this.cur = null;
+      if (!s) return;
+      const a = this.toViewport(s.p1 || s.points[0], STATE.pageViewport), b = this.toViewport(s.p2 || s.points[s.points.length - 1], STATE.pageViewport);
+      const tiny = Math.hypot(b[0] - a[0], b[1] - a[1]) < 3;
+      if (s.type === "free") { this.addShape(s); return; }
+      if (MARKUP.includes(s.type)) {
+        const items = await this.textItems(STATE.currentPage);
+        const lines = tiny ? [] : textLinesInSelection(items, s.p1, s.p2);
+        const page = STATE.currentPage;
+        if (lines.length) {
+          const shapes = lines.map((l) => {
+            if (s.type === "highlight") return { type: "highlight", color: s.color, width: 0, p1: [l.x0, l.base - l.h * 0.2], p2: [l.x1, l.base + l.h * 0.85] };
+            const y = s.type === "underline" ? l.base - l.h * 0.12 : l.base + l.h * 0.3;
+            return { type: s.type, color: s.color, width: s.width, p1: [l.x0, y], p2: [l.x1, y] };
+          });
+          this.addShapes(shapes, page);
+        } else if (!tiny) { // 글자가 없는 쪽(스캔본 등)은 그린 대로
+          delete s.preview;
+          if (s.type !== "highlight") s.p2 = [s.p2[0], s.p1[1]];
+          this.addShapes([s], page);
+        } else this.redraw();
+        return;
+      }
+      if (tiny) { this.redraw(); return; }
       this.addShape(s);
     };
     c.addEventListener("pointerup", finish);
-    c.addEventListener("pointercancel", finish);
+    c.addEventListener("pointercancel", () => { drag = null; this.cur = null; this.redraw(); });
+    c.addEventListener("pointerleave", () => { $("notePop").hidden = true; });
+
+    c.addEventListener("dblclick", (e) => {
+      if (this.tool !== "select" || !STATE.pageViewport) return;
+      const hit = this.hitTest(vpOf(e));
+      if (hit && hit.type === "note") {
+        this.noteEditing = hit; $("noteText").value = hit.text || "";
+        openModal("noteOverlay"); $("noteText").focus();
+      }
+    });
 
     $("noteConfirm").addEventListener("click", () => {
-      const text = $("noteText").value.trim();
-      if (notePendingPoint) {
-        this.addShape({ type: "note", color: "#f2c200", width: 1, p1: notePendingPoint, text: text || "(내용 없음)" });
+      const text = $("noteText").value.trim() || "(내용 없음)";
+      if (this.noteEditing) {
+        const s = this.noteEditing;
+        if (s.text !== text) this.doOp({ k: "prop", shape: s, before: { text: s.text }, after: { text } });
+      } else if (this.notePending) {
+        this.addShape({ type: "note", color: "#ffd933", width: 1, p1: this.notePending, text });
       }
-      notePendingPoint = null;
+      this.noteEditing = null; this.notePending = null;
       closeModal("noteOverlay");
     });
 
-    // 스티커 노트 클릭 시 내용 미리보기 (선택 도구일 때)
-    c.addEventListener("click", (e) => {
-      if (this.tool !== "select" || !STATE.pageViewport) return;
+    // 단축키: 되돌리기/다시 실행/삭제/취소
+    document.addEventListener("keydown", (e) => {
+      if (!STATE.pdfDoc) return;
+      const typing = ["INPUT", "TEXTAREA", "SELECT"].includes((document.activeElement || {}).tagName);
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey && !e.altKey && (k === "z" || k === "y") && !typing) {
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) this.redo(); else this.undo();
+      } else if (!typing && !e.ctrlKey && (k === "delete" || k === "backspace") && this.selected) {
+        e.preventDefault(); this.deleteSelected();
+      } else if (!typing && k === "escape" && $("presentOverlay") && !$("presentOverlay").classList.contains("open")) {
+        if (this.cur) { this.cur = null; drag = null; this.redraw(); }
+        else if (this.selected) this.select(null);
+        else if (this.tool !== "select") this.setTool("select");
+      }
     });
   },
 
-  /* ---------- 주석 포함 PDF 내보내기 ---------- */
-
-  async exportPDF() {
-    if (!STATE.pdfDoc) return;
-    if (!this.hasAny()) { showToast("추가된 주석이 없어요."); return; }
-    showLoading("주석을 반영한 PDF를 만드는 중…");
+  /* ----- 저장용 바이트 만들기 ----- */
+  async buildBytes() {
     try {
-      const outDoc = await PDFLib.PDFDocument.create();
-      for (let i = 1; i <= STATE.numPages; i++) {
-        const page = await STATE.pdfDoc.getPage(i);
-        const scale = 2;
-        const rotation = getPageRotation(i);
-        const vp = page.getViewport({ scale, rotation });
-        const canvas = document.createElement("canvas");
-        canvas.width = vp.width; canvas.height = vp.height;
-        const ctx = canvas.getContext("2d");
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-
-        (this.byPage[i] || []).forEach((s) => this.drawShape(ctx, s, vp));
-
-        const pngBytes = await new Promise((res) =>
-          canvas.toBlob((b) => b.arrayBuffer().then(res), "image/png"));
-        const png = await outDoc.embedPng(pngBytes);
-        const base = page.getViewport({ scale: 1, rotation });
-        const outPage = outDoc.addPage([base.width, base.height]);
-        outPage.drawImage(png, { x: 0, y: 0, width: base.width, height: base.height });
-      }
-      const bytes = await outDoc.save();
-      downloadBytes(bytes, replaceExt(STATE.fileName, "_주석.pdf"), "application/pdf");
-      showToast("주석을 반영한 PDF를 저장했어요.");
-    } catch (err) {
-      console.error(err);
-      showToast("내보내기 중 문제가 발생했어요.");
-    } finally {
-      hideLoading();
+      return await buildAnnotatedPDF(PDFLib, STATE.fileBytes, this.byPage, STATE.pageRotations);
+    } catch (e) {
+      console.warn("벡터 저장 실패, 이미지 방식으로 대신 저장해요:", e);
+      return this.buildBytesRaster();
     }
   },
+
+  // 예비 방식: 모든 쪽을 이미지로 구워서 저장 (벡터 방식이 안 되는 특이한 PDF용)
+  async buildBytesRaster() {
+    const outDoc = await PDFLib.PDFDocument.create();
+    for (let i = 1; i <= STATE.numPages; i++) {
+      const page = await STATE.pdfDoc.getPage(i), rotation = getPageRotation(i);
+      const vp = page.getViewport({ scale: 2, rotation });
+      const canvas = document.createElement("canvas");
+      canvas.width = vp.width; canvas.height = vp.height;
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      (this.byPage[i] || []).forEach((s) => this.drawShape(ctx, s, vp));
+      const png = await outDoc.embedPng(await new Promise((res) => canvas.toBlob((b) => b.arrayBuffer().then(res), "image/png")));
+      const base = page.getViewport({ scale: 1, rotation });
+      outDoc.addPage([base.width, base.height]).drawImage(png, { x: 0, y: 0, width: base.width, height: base.height });
+    }
+    return outDoc.save();
+  },
 };
+
+/* ---------- 저장하기 / 다른 이름으로 저장 ---------- */
+// 반환값: 저장했으면 true, 취소·실패면 false
+async function saveDocument(saveAsNew) {
+  if (!STATE.pdfDoc) { showToast("먼저 PDF를 열어주세요."); return false; }
+  let target = null;
+  try {
+    if (saveAsNew && window.showSaveFilePicker) {
+      target = await window.showSaveFilePicker({
+        suggestedName: STATE.fileName,
+        types: [{ description: "PDF 파일", accept: { "application/pdf": [".pdf"] } }],
+      });
+    } else if (!saveAsNew && STATE.fileHandle && STATE.fileHandle.requestPermission) {
+      let perm = await STATE.fileHandle.queryPermission({ mode: "readwrite" });
+      if (perm !== "granted") perm = await STATE.fileHandle.requestPermission({ mode: "readwrite" });
+      if (perm === "granted") target = STATE.fileHandle;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return false;
+    target = null;
+  }
+  let downloadName = STATE.fileName;
+  if (!target && saveAsNew) {
+    const name = prompt("저장할 파일 이름을 입력하세요.", STATE.fileName.replace(/\.pdf$/i, ""));
+    if (!name) return false;
+    downloadName = name.replace(/\.pdf$/i, "") + ".pdf";
+  }
+  showLoading("저장하는 중…");
+  try {
+    const bytes = ANNOTATE.hasChanges() ? await ANNOTATE.buildBytes() : new Uint8Array(STATE.fileBytes);
+    if (target) {
+      const w = await target.createWritable();
+      await w.write(bytes); await w.close();
+      if (saveAsNew) {
+        STATE.fileHandle = target; STATE.fileName = target.name;
+        $("docTitle").textContent = STATE.fileName + " - HorixOffice";
+        if (typeof RECENT !== "undefined") { RECENT.add(STATE.fileName, STATE.numPages); RECENT.saveHandle(STATE.fileName, target); }
+      }
+      showToast("저장했어요.");
+    } else {
+      downloadBytes(bytes, downloadName, "application/pdf");
+      showToast("저장했어요. (다운로드 폴더를 확인해 보세요)");
+    }
+    ANNOTATE.dirty = false;
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast("저장하는 중 문제가 발생했어요.");
+    return false;
+  } finally { hideLoading(); }
+}

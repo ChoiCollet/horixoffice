@@ -39,6 +39,7 @@ const PRESENT = {
       canvas.style.width = (vp.width / (window.devicePixelRatio || 1)) + "px";
       canvas.style.height = (vp.height / (window.devicePixelRatio || 1)) + "px";
       await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      if (ANNOTATE.visible) (ANNOTATE.byPage[this.page] || []).forEach((sh) => ANNOTATE.drawShape(canvas.getContext("2d"), sh, vp));
     };
 
     canvas.className = "";

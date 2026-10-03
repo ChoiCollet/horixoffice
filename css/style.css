@@ -621,3 +621,7 @@ html[data-skin-mode="dark"] .thumb{background:#242629}
 .contPage{background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.35);line-height:0;position:relative}
 .contPage canvas{display:block}
 .contPage .contNum{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:11px;color:#eee;background:rgba(0,0,0,.4);padding:1px 8px;border-radius:10px;white-space:nowrap}
+
+/* ===== 주석: 스티커노트 말풍선 ===== */
+#notePop{position:fixed;z-index:150;max-width:260px;background:#fffbe0;border:1px solid #d9c46a;border-radius:6px;padding:7px 10px;font-size:12px;line-height:1.5;color:#4a3d00;box-shadow:0 4px 14px rgba(0,0,0,.2);pointer-events:none;white-space:pre-wrap;word-break:break-word}
+#annoCanvas{touch-action:none}

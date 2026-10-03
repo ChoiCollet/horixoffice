@@ -8,13 +8,15 @@ const ACT = {
         });
         const file = await handle.getFile();
         await loadPDFFromFile(file);
+        STATE.fileHandle = handle;
         RECENT.saveHandle(file.name, handle);
         return;
       } catch (e) { if (e && e.name === "AbortError") return; }
     }
     $("fileInput").click();
   },
-  save: () => STATE.fileBytes && downloadBytes(STATE.fileBytes, STATE.fileName, "application/pdf"),
+  save: () => saveDocument(false),
+  saveAs: () => saveDocument(true),
   print: () => PRINTMOD.open(),
   zoomIn: () => setZoom(0.15), zoomOut: () => setZoom(-0.15),
   z100: () => { STATE.fitMode = "custom"; STATE.scale = 1; refreshView(); },
@@ -22,11 +24,9 @@ const ACT = {
   present: () => PRESENT.open(STATE.currentPage), presentStart: () => PRESENT.open(1),
   merge: () => MERGE.open(), capture: () => CAPTURE.toggle(),
   select: () => ANNOTATE.setTool("select"),
-  undo: () => ANNOTATE.undo(), clearPage: () => ANNOTATE.clearPage(), export: () => ANNOTATE.exportPDF(),
+  undo: () => ANNOTATE.undo(), redo: () => ANNOTATE.redo(), clearPage: () => ANNOTATE.clearPage(), clearAll: () => { if (confirm("모든 쪽의 주석을 지울까요?")) ANNOTATE.clearAll(); }, export: () => saveDocument(true),
   annoToggle: () => {
-    ANNOTATE.visible = !ANNOTATE.visible;
-    document.querySelectorAll('[data-a="annoToggle"]').forEach((b) => b.classList.toggle("on", ANNOTATE.visible));
-    ANNOTATE.redraw();
+    ANNOTATE.setVisible(!ANNOTATE.visible);
   },
   pane: () => { const p = $("rightPanel"); p.hidden = !p.hidden; refreshView(); },
   first: () => goToPage(1), prev: () => goToPage(STATE.currentPage - 1),
@@ -68,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (sel) PREFS.data.annoColor = sel.dataset.color;
     PREFS.save();
     $("leftPanel").style.display = PREFS.data.thumbs ? "" : "none";
-    if (STATE.pdfDoc) { ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth; syncAnnoUI(); }
+    if (STATE.pdfDoc) { ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth; ANNOTATE.pickedColor = true; syncAnnoUI(); }
     closeModal("settingsWin");
     showToast("설정을 저장했어요.");
   });
@@ -108,12 +108,15 @@ document.addEventListener("DOMContentLoaded", () => {
   $("nextPreviewPage").addEventListener("click", () => PRINTMOD.setPreviewPage(PRINTMOD.previewPage + 1));
 
   // 주석
-  document.querySelectorAll(".atool").forEach((b) => b.addEventListener("click", () => ANNOTATE.setTool(b.dataset.tool)));
-  document.querySelectorAll(".rcolor").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".rcolor").forEach((x) => x.classList.remove("selected"));
-    b.classList.add("selected"); ANNOTATE.color = b.dataset.color;
+  // 같은 도구를 한 번 더 누르면 선택 도구로 돌아가요
+  document.querySelectorAll(".atool").forEach((b) => b.addEventListener("click", () =>
+    ANNOTATE.setTool(ANNOTATE.tool === b.dataset.tool ? "select" : b.dataset.tool)));
+  // 리본의 색상 스와치만 (설정·스킨 창의 스와치와 섞이지 않게)
+  document.querySelectorAll("#colorRow .rcolor").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#colorRow .rcolor").forEach((x) => x.classList.remove("selected"));
+    b.classList.add("selected"); ANNOTATE.setColor(b.dataset.color);
   }));
-  $("strokeWidth").addEventListener("change", (e) => { ANNOTATE.width = Number(e.target.value); });
+  $("strokeWidth").addEventListener("change", (e) => ANNOTATE.setWidth(Number(e.target.value)));
   ANNOTATE.initPointerEvents(); CAPTURE.initPointerEvents();
 
   // 병합 / 프레젠테이션 / 최근 파일

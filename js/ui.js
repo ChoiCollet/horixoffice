@@ -16,6 +16,7 @@ const PREFS = {
 };
 
 function syncAnnoUI() {
+  ANNOTATE.syncToolUI();
   document.querySelectorAll(".rcolor[data-color]").forEach((b) => {
     if (!b.closest("#pref_annocolor_row") && !b.closest("#skinRow"))
       b.classList.toggle("selected", b.dataset.color === ANNOTATE.color);
@@ -39,7 +40,7 @@ let pendingCloseAction = null;
 
 function resetDocument() {
   STATE.pdfDoc = null; STATE.fileBytes = null; STATE.fileName = "제목 없음.pdf"; STATE.numPages = 0;
-  STATE.currentPage = 1; STATE.pageRotations = {}; STATE.fitMode = "custom"; STATE.scale = 1.2;
+  STATE.fileHandle = null; STATE.currentPage = 1; STATE.pageRotations = {}; STATE.fitMode = "custom"; STATE.scale = 1.2;
   STATE.viewMode = "single"; CONTVIEW.destroy(); $("continuousWrap").hidden = true; $("continuousWrap").classList.remove("show");
   $("pageWrap").style.display = "none"; $("empty").style.display = "";
   $("pageTotal").textContent = "0"; $("pageInput").value = "0";
@@ -59,7 +60,7 @@ async function attemptQuit() {
 }
 
 function withUnsavedCheck(proceed) {
-  if (STATE.pdfDoc && ANNOTATE.hasAny()) {
+  if (STATE.pdfDoc && ANNOTATE.hasChanges()) {
     pendingCloseAction = proceed;
     $("confirmSaveMsg").textContent = `${STATE.fileName.replace(/\.pdf$/i, "")}을(를) 저장할까요?`;
     openModal("confirmSaveWin"); centerWin($("confirmSaveWin"));
@@ -69,13 +70,6 @@ function withUnsavedCheck(proceed) {
 }
 
 Object.assign(ACT, {
-  saveAs: () => {
-    if (!STATE.fileBytes) return showToast("먼저 PDF를 열어주세요.");
-    const base = STATE.fileName.replace(/\.pdf$/i, "");
-    const name = prompt("저장할 파일 이름을 입력하세요.", base);
-    if (!name) return;
-    downloadBytes(STATE.fileBytes, name.replace(/\.pdf$/i, "") + ".pdf", "application/pdf");
-  },
   newBlankP: () => makeBlankPDF("portrait"),
   newBlankL: () => makeBlankPDF("landscape"),
   openRecent: (name) => RECENT.openByName(name),
@@ -321,6 +315,8 @@ const MENUS = {
   rotateMenu: ROTATE_ITEMS,
   paneMenu: PANE_ITEMS,
   annot: [["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
+    ["실행 취소", "Ctrl+Z", "undo", NEED], ["다시 실행", "Ctrl+Y", "redo", NEED],
+    ["현재 쪽 주석 지우기", "", "clearPage", NEED], ["모든 주석 지우기", "", "clearAll", NEED], "-",
     ...[["line", "선 그리기"], ["arrow", "화살표 그리기"], ["rect", "직사각형 그리기"], ["ellipse", "타원 그리기"], ["free", "자유형 그리기"],
       ["note", "스티커노트"], ["highlight", "강조"], ["underline", "밑줄"], ["strike", "취소선"]]
       .map(([t, l]) => [l, "", "tool_" + t, NEED, () => ANNOTATE.tool === t])],
@@ -431,7 +427,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // 저장 여부 확인 창 (문서 닫기 / 끝 전에 주석 등 변경사항이 있을 때)
   $("confirmSaveYes").addEventListener("click", async () => {
     closeModal("confirmSaveWin");
-    await ANNOTATE.exportPDF();
+    const saved = await saveDocument(false);
+    if (!saved) { pendingCloseAction = null; return; }
     const fn = pendingCloseAction; pendingCloseAction = null;
     if (fn) fn();
   });
@@ -470,8 +467,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const del = e.target.closest("[data-anno-del]");
     if (del) {
       const p = Number(del.dataset.annoPage), i = Number(del.dataset.annoIdx);
-      if (ANNOTATE.byPage[p]) ANNOTATE.byPage[p].splice(i, 1);
-      if (p === STATE.currentPage) ANNOTATE.redraw();
+      ANNOTATE.removeAt(p, i);
       ACT.showAnnoProps();
       return;
     }
@@ -514,7 +510,7 @@ document.querySelectorAll(".fwin").forEach((w) => {
 });
 
 /* ---- 단축키 ---- */
-const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "save", "f5": "presentStart", "shift+f5": "present",
+const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "saveAs", "f5": "presentStart", "shift+f5": "present",
   "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture", "alt+x": "quit", "ctrl+f4": "closeDoc" };
 let chord = 0;
 document.addEventListener("keydown", (e) => {

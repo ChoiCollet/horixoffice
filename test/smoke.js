@@ -36,10 +36,11 @@ const dom = new JSDOM(html, {
     window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/png;base64,AAAA";
     window.URL.createObjectURL = () => "blob:fake";
     window.URL.revokeObjectURL = () => {};
+    window.HTMLElement.prototype.setPointerCapture = () => {};
     window.IntersectionObserver = class { observe() {} disconnect() {} unobserve() {} };
     window.Element.prototype.scrollIntoView = () => {}; // jsdom 미구현 (실제 브라우저엔 모두 있음)
     function fakeViewport(w, h) {
-      return { width: w, height: h, convertToPdfPoint: (x, y) => [x, y], convertToViewportPoint: (x, y) => [x, y] };
+      return { width: w, height: h, scale: w / 595, convertToPdfPoint: (x, y) => [x, y], convertToViewportPoint: (x, y) => [x, y] };
     }
     function fakePage() {
       return {
@@ -242,7 +243,7 @@ async function main() {
   click($("fileBtn"));
   click(q('#fileMenu [data-a="newBlankP"]'));
   await new Promise((r) => setTimeout(r, 30));
-  T.ANNOTATE.byPage[1].push({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트" });
+  T.ANNOTATE.addShape({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트" });
   click($("fileBtn"));
   click(q('#fileMenu [data-a="closeDoc"]'));
   await new Promise((r) => setTimeout(r, 10));
@@ -256,7 +257,7 @@ async function main() {
   click($("fileBtn"));
   click(q('#fileMenu [data-a="newBlankP"]'));
   await new Promise((r) => setTimeout(r, 30));
-  T.ANNOTATE.byPage[1].push({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트2" });
+  T.ANNOTATE.addShape({ type: "note", color: "#f2c200", width: 1, p1: [10, 10], text: "테스트2" });
   click($("fileBtn"));
   click(q('#fileMenu [data-a="closeDoc"]'));
   await new Promise((r) => setTimeout(r, 10));
@@ -331,7 +332,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 10));
   ok("첨부 파일 보기 — 첨부가 없는 문서라 안내가 뜬다", $("workpaneBody").innerHTML.includes("없어요"));
 
-  T.ANNOTATE.byPage[1].push({ type: "highlight", color: "#f2a900", width: 4, p1: [0, 0], p2: [10, 10] });
+  T.ANNOTATE.addShape({ type: "highlight", color: "#f2a900", width: 4, p1: [0, 0], p2: [10, 10] });
   click(paneCaret);
   click(q('#dd [data-act="showAnnoProps"]'));
   await new Promise((r) => setTimeout(r, 10));
@@ -412,6 +413,109 @@ async function main() {
   ok("쪽 보기 버튼을 다시 누르면 한 쪽씩 보기로 돌아간다", T.STATE.viewMode === "single" && $("pageWrap").style.display === "block");
   T.ANNOTATE.setTool("line");
   ok("한 쪽씩 보기에선 주석 도구를 다시 쓸 수 있다", T.ANNOTATE.tool === "line");
+
+  // 29) 주석 — 그리기 / 되돌리기 / 선택·이동·삭제 / 속성 변경 / 저장
+  T.ANNOTATE.reset(3); T.STATE.currentPage = 1; await window.renderCurrentPage();
+  const ac = $("annoCanvas");
+  const ptr = (type, x, y, extra = {}) => ac.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...extra }));
+  const key = (k, extra = {}) => window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...extra }));
+  const shapes = () => T.ANNOTATE.byPage[1];
+
+  T.ANNOTATE.setTool("rect");
+  ok("도구를 고르면 리본 버튼에 선택(on) 표시가 붙는다", q('.atool[data-tool="rect"]').classList.contains("on") && !q('.atool[data-tool="line"]').classList.contains("on"));
+  T.ANNOTATE.setTool("line");
+  ptr("pointerdown", 100, 100); ptr("pointermove", 200, 150); ptr("pointerup", 200, 150);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("드래그하면 선이 추가된다", shapes().length === 1 && shapes()[0].type === "line");
+  ok("주석을 추가하면 '변경됨' 상태가 된다", T.ANNOTATE.hasChanges());
+  ok("선 두께가 점 단위(보통=4)로 저장된다", shapes()[0].width === 4, shapes()[0].width);
+  T.ANNOTATE.undo(); ok("실행 취소로 선이 사라진다", shapes().length === 0);
+  T.ANNOTATE.redo(); ok("다시 실행으로 선이 돌아온다", shapes().length === 1);
+
+  // 같은 도구를 다시 누르면 선택 도구로 (리본 클릭 동작)
+  click(q('.atool[data-tool="line"]'));
+  ok("활성 도구를 다시 누르면 선택 도구로 돌아간다", T.ANNOTATE.tool === "select");
+
+  // 선택 → 이동 → 되돌리기
+  const before = JSON.stringify(shapes()[0].p1);
+  ptr("pointerdown", 150, 125); ptr("pointermove", 180, 125); ptr("pointerup", 180, 125);
+  ok("선을 클릭하면 선택된다", T.ANNOTATE.selected === shapes()[0]);
+  ok("선택한 선을 끌면 30만큼 이동한다", Math.abs(shapes()[0].p1[0] - (JSON.parse(before)[0] + 30)) < 1e-6, JSON.stringify(shapes()[0].p1));
+  T.ANNOTATE.undo(); ok("이동도 실행 취소로 원위치된다", JSON.stringify(shapes()[0].p1) === before);
+  T.ANNOTATE.redo();
+
+  // 속성 변경(색) — 선택된 도형에만 적용 / 되돌리기
+  const oldColor = shapes()[0].color;
+  T.ANNOTATE.setColor("#1d8a4c");
+  ok("선택한 도형의 색이 바뀐다", shapes()[0].color === "#1d8a4c");
+  T.ANNOTATE.undo(); ok("색 변경도 되돌릴 수 있다", shapes()[0].color === oldColor);
+
+  // Delete 키 / 삭제 되돌리기
+  window.document.activeElement && window.document.activeElement.blur(); // 실제 브라우저에선 캔버스를 누르는 순간 포커스가 입력창에서 빠져요
+  key("Delete");
+  ok("Delete 키로 선택한 주석이 지워진다", shapes().length === 0);
+  T.ANNOTATE.undo(); ok("삭제도 되돌릴 수 있다", shapes().length === 1);
+
+  // 같은 쪽에서 선택 후 다른 곳 클릭 → 선택 해제
+  ptr("pointerdown", 400, 400);
+  ok("빈 곳을 클릭하면 선택이 풀린다", T.ANNOTATE.selected === null);
+
+  // 스티커노트: 말풍선 / 더블클릭 편집 / 되돌리기
+  T.ANNOTATE.addShape({ type: "note", color: "#ffd933", width: 1, p1: [300, 300], text: "처음 메모" });
+  ac.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true, clientX: 300, clientY: 300 }));
+  ok("노트를 더블클릭하면 편집 창이 열리고 기존 내용이 채워진다", $("noteOverlay").classList.contains("open") && $("noteText").value === "처음 메모");
+  $("noteText").value = "고친 메모"; click($("noteConfirm"));
+  const note = shapes().find((x) => x.type === "note");
+  ok("편집한 내용이 노트에 반영된다", note.text === "고친 메모");
+  T.ANNOTATE.undo(); ok("노트 편집도 되돌릴 수 있다", note.text === "처음 메모");
+  ptr("pointermove", 300, 300);
+  ok("노트 위에 마우스를 올리면 말풍선에 내용이 보인다", !$("notePop").hidden && $("notePop").textContent === "처음 메모");
+
+  // 글자에 붙는 형광펜 (글자 상자를 직접 주입해서 검증)
+  T.ANNOTATE.textCache[1] = [{ x: 72, base: 700, w: 200, h: 24 }];
+  T.ANNOTATE.pickedColor = false;
+  T.ANNOTATE.setTool("highlight");
+  ptr("pointerdown", 60, 690); ptr("pointermove", 400, 730); ptr("pointerup", 400, 730);
+  await new Promise((r) => setTimeout(r, 20));
+  const hl = shapes().filter((x) => x.type === "highlight");
+  ok("글자 위를 드래그하면 그 글줄에 딱 맞는 형광펜이 생긴다", hl.length === 1 && hl[0].p1[0] === 72 && hl[0].p2[0] === 272, JSON.stringify(hl));
+  ok("형광펜 기본 색은 노랑이다", hl[0] && hl[0].color === "#ffd400");
+
+  // 모두 지우기(여러 쪽) → 한 번에 되돌리기
+  T.ANNOTATE.addShapes([{ type: "line", color: "#000000", width: 2, p1: [1, 1], p2: [9, 9] }], 2);
+  const total = () => Object.values(T.ANNOTATE.byPage).reduce((n, a) => n + a.length, 0);
+  const n0 = total();
+  T.ANNOTATE.clearAll(); ok("모든 쪽의 주석이 한 번에 지워진다", total() === 0);
+  T.ANNOTATE.undo(); ok("모두 지우기를 한 번에 되돌린다", total() === n0, total());
+
+  // 리본 색상 스와치 ↔ 설정/스킨 창 스와치가 서로 영향을 주지 않는다 (예전 버그)
+  T.ANNOTATE.color = "#e2231a";
+  click(q("#skinRow .rcolor:nth-child(2)"));
+  ok("스킨 창의 색을 눌러도 주석 색은 바뀌지 않는다", T.ANNOTATE.color === "#e2231a");
+  click(q('#colorRow .rcolor[data-color="#1d8a4c"]'));
+  ok("리본의 색을 누르면 주석 색이 바뀐다", T.ANNOTATE.color === "#1d8a4c");
+
+  // 인쇄 미리보기·프레젠테이션에도 주석이 같이 그려진다 (예전엔 빠져 있었음)
+  let drawn = 0; const od = T.ANNOTATE.drawShape.bind(T.ANNOTATE);
+  T.ANNOTATE.drawShape = (...a) => { drawn++; return od(...a); };
+  T.ANNOTATE.addShape({ type: "line", color: "#000000", width: 2, p1: [5, 5], p2: [50, 50] });
+  T.PRINTMOD.previewPage = 1; await T.PRINTMOD.updatePreview();
+  ok("인쇄 미리보기에 주석이 포함된다", drawn >= 1, drawn);
+  drawn = 0; T.PRESENT.page = 1; await T.PRESENT.render(false);
+  ok("프레젠테이션 화면에도 주석이 포함된다", drawn >= 1, drawn);
+  T.ANNOTATE.drawShape = od;
+
+  // 저장 — 변경사항이 있으면 만든 바이트로, 저장하면 '변경됨'이 풀린다
+  T.ANNOTATE.buildBytes = async () => new Uint8Array([9, 9, 9]);
+  const dirtyBefore = T.ANNOTATE.hasChanges();
+  let dl = false; const ce = window.document.createElement.bind(window.document);
+  window.document.createElement = (tag) => { const el = ce(tag); if (tag === "a") { const oc = el.click.bind(el); el.click = () => { dl = true; oc(); }; } return el; };
+  const savedOk = await window.saveDocument(false);
+  ok("저장하기를 누르면 저장되고 true를 돌려준다", savedOk === true && dl);
+  ok("저장 후에는 '변경됨' 상태가 풀린다", dirtyBefore && !T.ANNOTATE.hasChanges());
+  click($("fileBtn")); click(q('#fileMenu [data-a="closeDoc"]'));
+  await new Promise((r) => setTimeout(r, 10));
+  ok("저장한 뒤에는 문서를 닫을 때 다시 묻지 않는다", !$("confirmSaveWin").classList.contains("open") && !T.STATE.pdfDoc);
 
   console.log("\n=== 결과 ===");
   let fail = 0;

@@ -6,6 +6,7 @@ const STATE = {
   pdfDoc: null,        // pdf.js document
   fileBytes: null,     // ArrayBuffer of the original file (for pdf-lib / merge / export)
   fileName: "제목 없음.pdf",
+  fileHandle: null,    // 파일 시스템 접근 API로 연 파일이면 그 핸들 (저장하기로 덮어쓰기용)
   numPages: 0,
   currentPage: 1,
   scale: 1.2,
@@ -16,7 +17,10 @@ const STATE = {
 };
 
 function getPageRotation(p) { return STATE.pageRotations[p] || 0; }
-function setPageRotation(p, deg) { STATE.pageRotations[p] = ((deg % 360) + 360) % 360; }
+function setPageRotation(p, deg) {
+  STATE.pageRotations[p] = ((deg % 360) + 360) % 360;
+  if (typeof ANNOTATE !== "undefined") ANNOTATE.markDirty();
+}
 
 function $(id) { return document.getElementById(id); }
 
@@ -53,6 +57,7 @@ async function loadPDFFromFile(file) {
   try {
     const buf = await file.arrayBuffer();
     STATE.fileBytes = buf;
+    STATE.fileHandle = null;
     STATE.fileName = file.name || "제목 없음.pdf";
     STATE.fileModified = file.lastModified;
     $("docTitle").textContent = STATE.fileName + " - HorixOffice";
