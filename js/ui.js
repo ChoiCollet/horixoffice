@@ -5,10 +5,16 @@ const NEED = 1, DIS = 2;
 const PREFS_KEY = "horix_prefs_v1";
 const PREFS = {
   data: Object.assign(
-    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light" },
+    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light", rtEnable: false, rtEngine: "naver", ui: { ribbon: true, quick: true, status: true } },
     (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; } })()
   ),
   save() { localStorage.setItem(PREFS_KEY, JSON.stringify(this.data)); },
+  applyUi() {
+    const u = Object.assign({ ribbon: true, quick: true, status: true }, this.data.ui || {});
+    document.body.classList.toggle("hide-ribbon", !u.ribbon);
+    document.body.classList.toggle("hide-quick", !u.quick);
+    document.body.classList.toggle("hide-status", !u.status);
+  },
   applySkin() {
     document.documentElement.style.setProperty("--brand", this.data.skin);
     document.documentElement.dataset.skinMode = this.data.skinMode || "light";
@@ -167,10 +173,7 @@ function applyViewMode(mode) {
   $("continuousWrap").hidden = !cont;
   $("continuousWrap").classList.toggle("show", cont);
   if (cont) {
-    ANNOTATE.setTool("select");
-    if (CAPTURE.active) CAPTURE.toggle();
     CONTVIEW.renderAll().then(() => CONTVIEW.scrollToPage(STATE.currentPage));
-    showToast("연속 보기에서는 주석 그리기·화면 캡처를 쓸 수 없어요. 한 쪽씩 보기로 돌아오면 다시 쓸 수 있어요.");
   } else {
     CONTVIEW.destroy();
     renderCurrentPage();
@@ -250,10 +253,6 @@ Object.assign(ACT, {
     THUMBS.rerenderOne(STATE.currentPage);
     refreshView();
   },
-  zoomTo: () => {
-    const v = parseInt(prompt("확대/축소 비율(%)", Math.round(STATE.scale * 100)), 10);
-    if (v >= 25 && v <= 400) { STATE.fitMode = "custom"; STATE.scale = v / 100; refreshView(); }
-  },
   trNone: () => setTr("none"), trSlide: () => setTr("slide"), trFade: () => setTr("fade"),
   docinfo: async () => {
     if (!STATE.pdfDoc) return showToast("먼저 PDF를 열어주세요.");
@@ -283,7 +282,7 @@ Object.assign(ACT, {
 ["line", "arrow", "rect", "ellipse", "free", "note", "highlight", "underline", "strike"].forEach((t) => (ACT["tool_" + t] = () => ANNOTATE.setTool(t)));
 
 /* ---- 탭 드롭다운 메뉴 (항목: [이름, 단축키 또는 ">", 동작 또는 하위메뉴, 플래그, 체크조건]) ---- */
-const CONV = [["HWP로 변환하기(P)…", "", "convert"], ["DOCX로 변환하기(F)…", "", "convert"], ["PPTX로 변환하기(G)…", "", "convert"], ["XLSX로 변환하기(I)…", "", "convert"], ["그림으로 변환하기(J)…", "", "convert"]];
+const CONV = [["HWP로 변환하기(P)…", "", "convertH"], ["DOCX로 변환하기(F)…", "", "convertD"], ["PPTX로 변환하기(G)…", "", "convertP"], ["XLSX로 변환하기(I)…", "", "convertX"], ["그림으로 변환하기(J)…", "", "convertI"]];
 const ROTATE_ITEMS = [
   ["왼쪽으로 90도 회전(R)", "", "rotateCCW", NEED],
   ["오른쪽으로 90도 회전(A)", "", "rotate", NEED],
@@ -295,7 +294,7 @@ const PANE_ITEMS = [
   ["첨부 파일 보기(B)", "", "showAttachments", NEED],
   ["주석 속성(C)", "", "showAnnoProps", NEED],
   ["탐색(D)", "", "showNav", NEED],
-  ["번역(E)", "", "soon"],
+  ["번역(E)", "", "translate"],
   "-",
   ["모두 닫기(F)", "", "paneCloseAll"],
 ];
@@ -303,14 +302,21 @@ const PAGEVIEW_ITEMS = [
   ["한 쪽씩 보기", "", "viewModeSingle", NEED, () => STATE.viewMode === "single"],
   ["연속 보기", "", "viewModeContinuous", NEED, () => STATE.viewMode === "continuous"],
 ];
+const TOOLBOX_ITEMS = [
+  ["리본 메뉴", "", "toggleRibbon", 0, () => PREFS.data.ui.ribbon !== false],
+  ["빠른 도구 모음", "", "toggleQuick", 0, () => PREFS.data.ui.quick !== false],
+  ["상태 표시줄", "", "toggleStatus", 0, () => PREFS.data.ui.status !== false],
+  ["페이지 패널", "", "toggleThumbs", 0, () => leftPanelShown()],
+  ["작업 창", "", "pane", 0, () => !$("rightPanel").hidden],
+];
 const MENUS = {
-  home: [["복사하기(C)", "Ctrl+C", "soon", NEED], ["모두 선택(S)", "Ctrl+A", "soon", NEED], "-", ["찾기(F)…", "Ctrl+F", "find", NEED]],
+  home: [["복사하기(C)", "Ctrl+C", "copy", NEED], ["모두 선택(S)", "Ctrl+A", "selectAll", NEED], "-", ["찾기(F)…", "Ctrl+F", "find", NEED]],
   view: [["프레젠테이션(S)", "F5", "presentStart", NEED],
     ["쪽 보기(V)", ">", PAGEVIEW_ITEMS],
     ["회전(A)", ">", ROTATE_ITEMS], "-",
     ["작업 창(B)", ">", PANE_ITEMS], ["확대/축소(Z)…", "", "zoomTo", NEED], "-",
     ["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
-    ["도구 상자(C)", ">", [["준비 중", "", "soon"]]]],
+    ["도구 상자(C)", ">", TOOLBOX_ITEMS]],
   pageViewMenu: PAGEVIEW_ITEMS,
   rotateMenu: ROTATE_ITEMS,
   paneMenu: PANE_ITEMS,
@@ -323,9 +329,9 @@ const MENUS = {
   present: [["처음부터(S)", "F5", "presentStart", NEED], ["현재 쪽부터(A)", "Shift+F5", "present", NEED], "-",
     ["화면 전환(B)", ">", [["없음", "", "trNone", 0, () => $("transitionSelect").value === "none"], ["밀어내기", "", "trSlide", 0, () => $("transitionSelect").value === "slide"], ["밝기 변화", "", "trFade", 0, () => $("transitionSelect").value === "fade"]]],
     ["효과 설정(C)", ">", [["준비 중", "", "soon"]], DIS]],
-  tools: [["선택(S)", "Shift+Q", "select", 0, () => ANNOTATE.tool === "select"], ["손도구(H)", "Shift+W", "soon"],
+  tools: [["선택(S)", "Shift+Q", "select", 0, () => ANNOTATE.tool === "select"], ["손도구(H)", "Shift+W", "hand", NEED, () => ANNOTATE.tool === "hand"],
     ["화면 캡처(A)", "Ctrl+Shift+C", "capture", NEED], ["선택 영역 내보내기(E)", "Shift+A", "capture", NEED], "-",
-    ["한컴 사전(D)…", "F12", "soon"], "-", ["실시간 검색 설정(B)…", "", "soon"], "-",
+    ["한컴 사전(D)…", "F12", "dict"], "-", ["실시간 검색 설정(B)…", "", "rtSettings"], "-",
     ["쪽 추출하기(C)…", "", "extract", NEED], ["PDF 병합(M)…", "", "merge"], "-", ...CONV],
 };
 function itemHtml(it) {
@@ -342,9 +348,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (same) return;
     dd.innerHTML = MENUS[id].map(itemHtml).join(""); dd.dataset.cur = id;
     const r = b.getBoundingClientRect();
-    dd.style.left = Math.round(r.left) + "px";
     dd.style.top = Math.round(r.bottom + 2) + "px";
     dd.hidden = false;
+    dd.style.left = Math.max(4, Math.min(Math.round(r.left), innerWidth - dd.offsetWidth - 4)) + "px";
   }));
   $("dd").addEventListener("click", (e) => {
     const it = e.target.closest("[data-act]");
@@ -511,7 +517,7 @@ document.querySelectorAll(".fwin").forEach((w) => {
 
 /* ---- 단축키 ---- */
 const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "saveAs", "f5": "presentStart", "shift+f5": "present",
-  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture", "alt+x": "quit", "ctrl+f4": "closeDoc" };
+  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture", "alt+x": "quit", "ctrl+f4": "closeDoc", "ctrl+a": "selectAll", "shift+w": "hand", "f12": "dict" };
 let chord = 0;
 document.addEventListener("keydown", (e) => {
   if ($("presentOverlay").classList.contains("open")) return;
@@ -521,7 +527,96 @@ document.addEventListener("keydown", (e) => {
   if (chord && Date.now() - chord < 1500 && key === "i" && !mod) { chord = 0; e.preventDefault(); return ACT.docinfo(); }
   if (e.ctrlKey && key === "q") { chord = Date.now(); e.preventDefault(); return; }
   const k = (e.ctrlKey ? "ctrl+" : "") + (e.altKey ? "alt+" : "") + (e.shiftKey ? "shift+" : "") + key;
+  if ((k === "ctrl+a") && typing) return; // 입력창 안에서는 원래 동작 유지
   if (SC[k]) { e.preventDefault(); if (STATE.pdfDoc || SC[k] === "open" || SC[k] === "quit") ACT[SC[k]](); return; }
   if (!mod && STATE.pdfDoc && key === "arrowleft") ACT.prev();
   if (!mod && STATE.pdfDoc && key === "arrowright") ACT.next();
+});
+
+/* =========================================================
+   손도구 · 복사/모두 선택 · 사전/검색/번역 · 변환 · 서식 문서 · 도구 상자 · 모바일
+   ========================================================= */
+const CV_FMT = { H: "hwp", D: "docx", P: "pptx", X: "xlsx", I: "img", h: "hwp", d: "docx", p: "pptx", x: "xlsx", i: "img" };
+function openConvert(key) {
+  if (!STATE.pdfDoc) return showToast("먼저 PDF를 열어주세요.");
+  const fmt = CV_FMT[key] || "img";
+  if (fmt === "hwp") { showToast("HWP는 한글과컴퓨터의 비공개 형식이라 브라우저에서는 만들 수 없어요. DOCX나 그림으로 바꿔 보세요."); return; }
+  document.querySelector(`input[name="cvFmt"][value="${fmt}"]`).checked = true;
+  openModal("convertWin"); centerWin($("convertWin"));
+}
+function selectedTextForTools() { return TEXTLAYER.selectionText().replace(/\s+/g, " ").trim().slice(0, 60); }
+const toggleUi = (k) => { PREFS.data.ui = Object.assign({ ribbon: true, quick: true, status: true }, PREFS.data.ui); PREFS.data.ui[k] = !PREFS.data.ui[k]; PREFS.save(); PREFS.applyUi(); if (STATE.pdfDoc) refreshView(); };
+
+Object.assign(ACT, {
+  copy: () => TEXTLAYER.copy(),
+  selectAll: () => TEXTLAYER.selectAll(),
+  hand: () => ANNOTATE.setTool(ANNOTATE.tool === "hand" ? "select" : "hand"),
+  dict: () => { $("dictText").value = selectedTextForTools() || $("dictText").value; openModal("dictWin"); centerWin($("dictWin")); $("dictText").focus(); },
+  translate: () => {
+    const t = selectedTextForTools();
+    if (t) openExternal(translateUrl(t));
+    else { ACT.dict(); showToast("번역할 글자를 선택하거나 낱말을 입력한 뒤 '번역'을 눌러 주세요."); }
+  },
+  rtSettings: () => {
+    $("rt_enable").checked = !!PREFS.data.rtEnable; $("rt_engine").value = PREFS.data.rtEngine || "naver";
+    openModal("rtWin"); centerWin($("rtWin"));
+  },
+  toggleRibbon: () => toggleUi("ribbon"), toggleQuick: () => toggleUi("quick"), toggleStatus: () => toggleUi("status"),
+  toggleThumbs: () => setLeftPanel(!leftPanelShown()),
+  siteMenu: () => { $("siteMenu").hidden = !$("siteMenu").hidden; },
+  convert: (key) => openConvert(key || "i"),
+  convertH: () => openConvert("H"), convertD: () => openConvert("D"), convertP: () => openConvert("P"),
+  convertX: () => openConvert("X"), convertI: () => openConvert("I"),
+  tplLined: () => makeTemplate("lined", "줄 노트"), tplGrid: () => makeTemplate("grid", "모눈종이"),
+  tplDots: () => makeTemplate("dots", "점 모눈종이"), tplCornell: () => makeTemplate("cornell", "코넬 노트"),
+  tplStaff: () => makeTemplate("staff", "5선 악보"),
+  zoomTo: () => {
+    if (!STATE.pdfDoc) return;
+    $("zoomCustom").value = Math.round(STATE.scale * 100);
+    const pct = String(Math.round(STATE.scale * 100));
+    $("zoomPreset").value = STATE.fitMode !== "custom" ? STATE.fitMode : ([...$("zoomPreset").options].some((o) => o.value === pct) ? pct : "custom");
+    openModal("zoomWin"); centerWin($("zoomWin"));
+  },
+  showNav: () => { if (!STATE.pdfDoc) return; setLeftPanel(true); showToast("왼쪽 페이지 탐색 패널을 열었어요."); },
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  PREFS.applyUi();
+  ANNOTATE.setTool("select");
+
+  // 변환
+  $("convertRun").addEventListener("click", () => CONVERT.run());
+  // 확대/축소 창
+  $("zoomApply").addEventListener("click", () => {
+    const v = $("zoomPreset").value;
+    if (v === "width" || v === "page") setFitMode(v);
+    else {
+      const n = v === "custom" ? Number($("zoomCustom").value) : Number(v);
+      if (!(n >= 25 && n <= 400)) return showToast("25~400 사이의 숫자를 넣어 주세요.");
+      STATE.fitMode = "custom"; STATE.scale = n / 100; refreshView();
+    }
+    closeModal("zoomWin");
+  });
+  $("zoomPreset").addEventListener("change", (e) => { if (/^\d+$/.test(e.target.value)) $("zoomCustom").value = e.target.value; });
+  // 사전
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-dict]"); if (!b) return;
+    const text = $("dictText").value.trim();
+    if (!text) return showToast("찾을 낱말을 입력해 주세요.");
+    openExternal(b.dataset.dict === "translate" ? translateUrl(text) : DICT_SITES[b.dataset.dict].url + encodeURIComponent(text));
+  });
+  $("dictText").addEventListener("keydown", (e) => { if (e.key === "Enter") openExternal(DICT_SITES.stdict.url + encodeURIComponent($("dictText").value.trim())); });
+  // 실시간 검색
+  $("rtSave").addEventListener("click", () => {
+    PREFS.data.rtEnable = $("rt_enable").checked; PREFS.data.rtEngine = $("rt_engine").value; PREFS.save();
+    closeModal("rtWin"); showToast("실시간 검색 설정을 저장했어요.");
+  });
+
+  // 하위 메뉴: 터치에서는 hover가 없으니 눌러서 펼치고 접어요
+  document.addEventListener("click", (e) => {
+    const head = e.target.closest(".has-sub");
+    if (head && !e.target.closest(".sub")) { head.classList.toggle("open"); e.stopPropagation(); }
+  }, true);
+  // 모바일 위쪽 ⋯ 메뉴 닫기
+  document.addEventListener("click", (e) => { if (!e.target.closest("#siteMenu,#moreBtn")) $("siteMenu").hidden = true; });
 });

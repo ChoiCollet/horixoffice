@@ -24,7 +24,7 @@ const THUMBS = {
       num.textContent = i;
       div.appendChild(num);
 
-      div.addEventListener("click", () => goToPage(i));
+      div.addEventListener("click", () => { goToPage(i); if (isMobile()) setLeftPanel(false); });
       wrap.appendChild(div);
       this.els.push(div);
 

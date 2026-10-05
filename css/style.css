@@ -281,7 +281,7 @@ input.rnum { width: 46px; text-align: center; }
 #annoCanvas, #captureCanvas {
   position: absolute; left: 0; top: 0; touch-action: none;
 }
-#captureCanvas { cursor: crosshair; display: none; }
+#captureCanvas { cursor: crosshair; }
 
 #rightPanel {
   width: 220px;
@@ -411,9 +411,6 @@ input.rnum { width: 46px; text-align: center; }
   background: #fff;
 }
 
-@media (max-width: 900px) {
-  #leftPanel, #rightPanel { display: none; }
-}
 
 /* ===== HorixOffice: 한PDF 레이아웃 + 화이트 테마 ===== */
 [hidden]{display:none!important}
@@ -625,3 +622,99 @@ html[data-skin-mode="dark"] .thumb{background:#242629}
 /* ===== 주석: 스티커노트 말풍선 ===== */
 #notePop{position:fixed;z-index:150;max-width:260px;background:#fffbe0;border:1px solid #d9c46a;border-radius:6px;padding:7px 10px;font-size:12px;line-height:1.5;color:#4a3d00;box-shadow:0 4px 14px rgba(0,0,0,.2);pointer-events:none;white-space:pre-wrap;word-break:break-word}
 #annoCanvas{touch-action:none}
+
+/* =========================================================
+   모바일 / 좁은 화면 최적화 + 줄바꿈 방지
+   ========================================================= */
+html,body{height:100%}
+@supports (height:100dvh){html,body,#app{height:100dvh}}
+#docTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#titlebar nav a,.tab,.filebtn,.qb,#statusbar,#statusbar *{white-space:nowrap}
+#titlebar{grid-template-columns:auto 1fr auto;gap:8px}
+#titlebar .logo{width:38px}
+#titlebar nav{gap:12px}
+.moreBtn{display:none}
+.fsBtn{font-size:19px;width:34px;height:30px;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+#siteMenu{position:fixed;right:8px;top:40px;z-index:70;background:#fff;border:1px solid #cfd3d9;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.2);padding:6px 0;min-width:170px}
+#siteMenu a{display:block;padding:10px 16px;color:#333;text-decoration:none;font-size:14px;white-space:nowrap}
+#siteMenu a:hover{background:#f0f2f5}
+#tabScroller{display:flex;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+#tabScroller::-webkit-scrollbar{display:none}
+#tabScroller .tabbox{flex:none}
+#fileWrap{flex:none;position:static}
+#fileMenu{width:min(380px,calc(100vw - 12px))}
+.sb-mob{display:none}
+.sbSlash{margin:0 2px}
+.has-sub.open>.sub{display:block}
+.textL{position:absolute;left:0;top:0;pointer-events:none;overflow:hidden;line-height:1;z-index:2}
+.textL span{position:absolute;white-space:pre;color:transparent;transform-origin:0 100%;cursor:text;-webkit-user-select:text;user-select:text}
+.textL ::selection,.textL span::selection{background:rgba(47,111,237,.35);color:transparent}
+#viewer[data-tool="select"] .textL{pointer-events:auto}
+#viewer[data-tool="hand"]{cursor:grab}
+#viewer[data-tool="hand"].grabbing{cursor:grabbing}
+#viewer[data-tool="hand"] .annoC,#viewer[data-tool="hand"] .textL{pointer-events:none}
+#viewer[data-tool="select"] .annoC{pointer-events:none}
+#viewer:not([data-tool="select"]):not([data-tool="hand"]) .annoC{pointer-events:auto}
+.annoC{position:absolute;left:0;top:0}
+#rtPop{position:fixed;z-index:160;background:#2f6fed;color:#fff;border:0;border-radius:16px;padding:6px 12px;font-size:12px;box-shadow:0 3px 10px rgba(0,0,0,.3);cursor:pointer}
+body.hide-ribbon #ribbon,body.hide-quick #quick,body.hide-status #statusbar{display:none}
+
+@media (max-width:720px){
+  #titlebar{height:36px;padding:0 4px 0 0}
+  #titlebar .logo{width:34px;height:36px;font-size:16px}
+  #docTitle{font-size:12px;text-align:left}
+  .navlink{display:none}
+  .moreBtn{display:inline-flex;font-size:20px;width:34px;height:30px;align-items:center;justify-content:center;line-height:1}
+  #menurow{height:38px;padding-left:0}
+  .filebtn{width:58px;font-size:13px;border-right:1px solid var(--ribbon-border)}
+  .vsep{display:none}
+  .tabbox{width:auto;min-width:86px}
+  .tab{padding:0 8px;font-size:13px}
+  .tabv{width:24px}
+  #ribbon{height:76px}
+  .panel{padding:3px 2px}
+  .rg{padding:0 3px}
+  .rb{width:54px;font-size:10.5px;padding:4px 1px;gap:3px}
+  .rb i{font-size:20px;height:24px;line-height:24px}
+  .rcaret.tabv{width:54px}
+  .rb.sm{width:84px}
+  .gal .rb{width:66px}
+  #quick{height:34px;padding:0 4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  #quick::-webkit-scrollbar{display:none}
+  .qb{min-width:34px;height:30px;flex:none}
+  #content{position:relative}
+  #viewer{padding:8px}
+  #leftPanel{display:none}
+  #leftPanel.mob-open{display:block;position:absolute;left:0;top:0;bottom:0;width:132px;z-index:40;box-shadow:4px 0 14px rgba(0,0,0,.25)}
+  #rightPanel{position:absolute;right:0;top:0;bottom:0;width:min(280px,86vw);z-index:40;box-shadow:-4px 0 14px rgba(0,0,0,.25)}
+  #statusbar{height:40px;padding:0 4px;gap:0}
+  .sb-desk{display:none!important}
+  .sb-mob{display:inline-block}
+  #statusbar .qb{min-width:34px;height:32px;font-size:16px}
+  #pageInput{width:38px;height:28px;margin:0 3px;font-size:13px}
+  #zoomText{min-width:46px;text-align:center;font-size:12px}
+  .fwin{width:calc(100vw - 12px)!important;left:6px!important;max-height:calc(100dvh - 16px);overflow:auto}
+  .fbody2{flex-direction:column;padding:12px;gap:10px}
+  .fmain{max-height:none;overflow:visible}
+  .factions{flex-direction:row;padding-top:0}
+  .factions .btn{flex:1;width:auto}
+  .prt,.fmain[style*="flex"]{flex-direction:column!important}
+  .prt-left{width:auto}
+  .mcCol{width:100%}
+  .fopacity{width:56px;margin:0 6px}
+  #fileMenu{position:fixed;left:6px;right:6px;top:78px;width:auto;max-height:calc(100dvh - 90px);overflow:auto}
+  #fileMenu .sub,#dd .sub{position:static;box-shadow:none;border:0;border-left:3px solid #e3e5ea;margin-left:14px;min-width:0}
+  #dd{max-width:calc(100vw - 12px);max-height:calc(100dvh - 120px);overflow:auto;min-width:0}
+  .mi{padding:11px 14px}
+  .mergeList{max-height:200px}
+  .skinCustomRow{margin-left:0}
+}
+.capC{display:none;position:absolute;left:0;top:0;cursor:crosshair;touch-action:none;z-index:5}
+#viewer.capturing .capC{display:block}
+#captureCanvas{display:none}
+#viewer.capturing #captureCanvas{display:block}
+.pdfC{display:block}
+.contPage{position:relative}
+.contPage .annoC{position:absolute;left:0;top:0}
+#viewer{touch-action:pan-x pan-y}
+.dictBtns{display:flex;flex-wrap:wrap;gap:8px}

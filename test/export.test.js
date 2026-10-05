@@ -5,8 +5,8 @@ const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
 
 // 같은 영역(realm)에서 실행해야 pdf-lib의 타입 검사가 정상 동작한다
 const code = fs.readFileSync(path.join(__dirname, "..", "js", "annotate.js"), "utf8");
-const fns = new Function("window", "document", code + "\n;return { buildAnnotatedPDF, textItemsFromContent, textLinesInSelection };")({}, {});
-const { buildAnnotatedPDF, textItemsFromContent, textLinesInSelection } = fns;
+const fns = new Function("window", "document", code + "\n;return { buildAnnotatedPDF, textItemsFromContent, textLinesInSelection, detectHorixSession };")({}, {});
+const { buildAnnotatedPDF, textItemsFromContent, textLinesInSelection, detectHorixSession } = fns;
 
 const results = [];
 const ok = (n, c, d) => results.push({ n, pass: !!c, d });
@@ -81,6 +81,17 @@ const ok = (n, c, d) => results.push({ n, pass: !!c, d });
   const base = await PL.PDFDocument.create(); const bp = base.addPage([300, 300]); bp.setRotation(PL.degrees(90));
   const o2 = await buildAnnotatedPDF(PL, await base.save(), {}, { 1: 90 });
   ok("원본이 이미 90도인 쪽에 90도를 더하면 180도가 된다", (await PL.PDFDocument.load(o2)).getPage(0).getRotation().angle === 180);
+
+  // 저장한 파일을 다시 열면 원본과 주석을 꺼내서 계속 편집할 수 있어야 한다
+  const embedded = await buildAnnotatedPDF(PL, srcBytes, byPage, { 2: 90 }, { embed: { original: new Uint8Array(srcBytes), session: { v: 1, byPage, rotations: { 2: 90 } } } });
+  const ed = await pdfjs.getDocument({ data: new Uint8Array(embedded), useSystemFonts: true }).promise;
+  const found = await detectHorixSession(ed);
+  ok("저장한 파일에서 편집 데이터를 찾아낸다", !!found && found.session.v === 1);
+  ok("꺼낸 원본이 처음 열었던 파일과 바이트까지 같다", found && Buffer.compare(Buffer.from(found.original), Buffer.from(srcBytes)) === 0);
+  ok("꺼낸 주석이 모두 그대로다 (9개 + 한글 메모)", found && found.session.byPage[1].length === 9 && found.session.byPage[1][8].text === "한글 메모 테스트 ✓");
+  ok("쪽 회전 정보도 함께 복원된다", found && found.session.rotations[2] === 90);
+  ok("일반 PDF에서는 편집 데이터를 찾지 않는다", (await detectHorixSession(await pdfjs.getDocument({ data: new Uint8Array(srcBytes) }).promise)) === null);
+  ok("원본을 품은 파일도 처음보다 용량이 크게 늘지 않는다 (원본 1배 + 주석)", embedded.length < srcBytes.length * 2 + 20000, `${srcBytes.length} → ${embedded.length}`);
 
   console.log("\n=== 저장 결과 검증 ===");
   let fail = 0;

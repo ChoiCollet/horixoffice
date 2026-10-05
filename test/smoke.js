@@ -19,7 +19,7 @@ let inline = localScripts
   .join("\n");
 // 테스트 전용 브릿지: let/const 전역은 window의 속성이 아니라 공유 렉시컬 스코프에만
 // 있으므로, Node 쪽에서 상태를 읽고 조작할 수 있게 참조를 한 번 담아둔다.
-inline += `\n<script>window.__t = { STATE, ANNOTATE, ACT, PREFS, RECENT, MERGE, CAPTURE, PRESENT, PRINTMOD, THUMBS, showToast };</script>\n`;
+inline += `\n<script>window.__t = { STATE, ANNOTATE, ACT, PREFS, RECENT, MERGE, CAPTURE, PRESENT, PRINTMOD, THUMBS, TEXTLAYER, CONVERT, CONTVIEW, showToast };</script>\n`;
 html = html.replace(/<script src="js\/[a-zA-Z]+\.js"><\/script>\s*/g, "");
 html = html.replace("</body>", inline + "</body>");
 
@@ -40,7 +40,7 @@ const dom = new JSDOM(html, {
     window.IntersectionObserver = class { observe() {} disconnect() {} unobserve() {} };
     window.Element.prototype.scrollIntoView = () => {}; // jsdom 미구현 (실제 브라우저엔 모두 있음)
     function fakeViewport(w, h) {
-      return { width: w, height: h, scale: w / 595, convertToPdfPoint: (x, y) => [x, y], convertToViewportPoint: (x, y) => [x, y] };
+      return { width: w, height: h, scale: w / 595, transform: [w / 595, 0, 0, -w / 595, 0, h], convertToPdfPoint: (x, y) => [x, y], convertToViewportPoint: (x, y) => [x, y] };
     }
     function fakePage() {
       return {
@@ -50,6 +50,7 @@ const dom = new JSDOM(html, {
     }
     window.pdfjsLib = {
       GlobalWorkerOptions: {},
+      Util: { transform: (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]] },
       PermissionFlag: { PRINT: 4, COPY: 16, MODIFY_CONTENTS: 8, MODIFY_ANNOTATIONS: 32 },
       getDocument: () => ({
         promise: Promise.resolve({
@@ -63,8 +64,9 @@ const dom = new JSDOM(html, {
       }),
     };
     window.PDFLib = {
+      rgb: () => ({}),
       PDFDocument: {
-        create: () => Promise.resolve({ addPage: () => {}, save: () => Promise.resolve(new Uint8Array([1, 2, 3])) }),
+        create: () => Promise.resolve({ addPage: () => ({ drawLine() {}, drawCircle() {}, drawRectangle() {} }), save: () => Promise.resolve(new Uint8Array([1, 2, 3])) }),
         load: () => Promise.resolve({ getPageIndices: () => [0], getPageCount: () => 3 }),
       },
     };
@@ -405,14 +407,22 @@ async function main() {
   ok("연속 보기로 바꾸면 모든 쪽(3개)이 이어서 렌더된다", $("continuousWrap").querySelectorAll(".contPage").length === 3);
   ok("연속 보기에서는 단일 쪽 영역이 숨겨진다", $("pageWrap").style.display === "none");
   T.ANNOTATE.setTool("line");
-  ok("연속 보기에서 주석 도구는 선택(select)으로 막힌다", T.ANNOTATE.tool === "select");
+  const cp2 = $("continuousWrap").querySelector('.contPage[data-page="2"]');
+  const cptr = (el, type, x, y) => el.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+  cptr(cp2, "pointerdown", 20, 20); cptr(cp2, "pointermove", 120, 90); cptr(cp2, "pointerup", 120, 90);
+  await new Promise((r) => setTimeout(r, 10));
+  ok("연속 보기에서도 주석을 그릴 수 있다 (쪽마다 따로 저장)", T.ANNOTATE.byPage[2].length === 1 && T.ANNOTATE.byPage[2][0].type === "line", JSON.stringify(T.ANNOTATE.byPage[2]));
+  ok("연속 보기에서 그린 쪽이 현재 쪽으로 바뀐다", T.STATE.currentPage === 2);
+  ok("연속 보기의 쪽마다 주석·글자·캡처 층이 있다", cp2.querySelector(".annoC") && cp2.querySelector(".textL") && cp2.querySelector(".capC"));
+  T.ANNOTATE.setTool("select");
   await window.goToPage(2);
   ok("연속 보기에서 쪽 이동 시 현재 쪽 번호가 갱신된다", T.STATE.currentPage === 2);
   click(q('.panel[data-panel="view"] [data-a="viewModeToggle"]'));
   await new Promise((r) => setTimeout(r, 30));
   ok("쪽 보기 버튼을 다시 누르면 한 쪽씩 보기로 돌아간다", T.STATE.viewMode === "single" && $("pageWrap").style.display === "block");
   T.ANNOTATE.setTool("line");
-  ok("한 쪽씩 보기에선 주석 도구를 다시 쓸 수 있다", T.ANNOTATE.tool === "line");
+  ok("한 쪽씩 보기로 돌아와도 주석 도구를 쓸 수 있다", T.ANNOTATE.tool === "line");
+  T.ANNOTATE.setTool("select");
 
   // 29) 주석 — 그리기 / 되돌리기 / 선택·이동·삭제 / 속성 변경 / 저장
   T.ANNOTATE.reset(3); T.STATE.currentPage = 1; await window.renderCurrentPage();
@@ -516,6 +526,105 @@ async function main() {
   click($("fileBtn")); click(q('#fileMenu [data-a="closeDoc"]'));
   await new Promise((r) => setTimeout(r, 10));
   ok("저장한 뒤에는 문서를 닫을 때 다시 묻지 않는다", !$("confirmSaveWin").classList.contains("open") && !T.STATE.pdfDoc);
+
+  // 30) 글자 선택·복사 / 손도구 / 크기 조절 / 모바일 / 변환 / 서식 / 사전 / 도구 상자
+  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  T.ANNOTATE.reset(3); T.STATE.currentPage = 1; await window.renderCurrentPage();
+  const fakeItems = { items: [{ str: "안녕하세요", transform: [12, 0, 0, 12, 72, 700], width: 60, height: 12, fontName: "f" }, { str: "HorixOffice", transform: [12, 0, 0, 12, 72, 680], width: 70, height: 12, fontName: "f" }], styles: { f: { fontFamily: "sans-serif" } } };
+  const pg = await T.STATE.pdfDoc.getPage(1); const origGTC = pg.getTextContent;
+  T.ANNOTATE.setTool("select");
+  const nSpans = await T.TEXTLAYER.render({ getTextContent: async () => fakeItems }, { transform: [1, 0, 0, -1, 0, 842], scale: 1, width: 595, height: 842 }, $("textLayer"));
+  ok("글자 층에 글자 조각마다 투명한 span이 만들어진다", nSpans === 2 && $("textLayer").querySelectorAll("span").length === 2, nSpans);
+  ok("글자 위치가 쪽 좌표를 화면 좌표로 바꿔서 놓인다 (72, 842-700-12)", $("textLayer").firstChild.style.left === "72px" && $("textLayer").firstChild.style.top === "130px", $("textLayer").firstChild.style.left + "," + $("textLayer").firstChild.style.top);
+  ok("선택 도구일 때 글자 층이 마우스를 받는다", $("viewer").dataset.tool === "select");
+  T.TEXTLAYER.selectAll();
+  ok("모두 선택하면 쪽의 글자가 전부 선택된다", window.getSelection().toString().includes("안녕하세요") && window.getSelection().toString().includes("HorixOffice"), window.getSelection().toString());
+  let clip = null; Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (t) => { clip = t; } }, configurable: true });
+  await T.TEXTLAYER.copy();
+  ok("복사하기가 선택한 글자를 클립보드로 보낸다", clip && clip.includes("안녕하세요"), clip);
+  window.getSelection().removeAllRanges();
+  await T.TEXTLAYER.copy();
+  ok("선택한 글자가 없으면 안내만 뜨고 복사하지 않는다", $("toast").textContent.includes("먼저 선택"), $("toast").textContent);
+
+  // 실시간 검색 버튼
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 100, top: 200, width: 50, height: 14 });
+  T.PREFS.data.rtEnable = true; T.TEXTLAYER.selectAll();
+  window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  ok("실시간 검색을 켜고 글자를 고르면 검색 버튼이 나타난다", !$("rtPop").hidden);
+  let opened = null; window.open = (u) => { opened = u; };
+  T.PREFS.data.rtEngine = "google"; click($("rtPop"));
+  ok("검색 버튼을 누르면 고른 엔진으로 새 탭이 열린다", opened && opened.startsWith("https://www.google.com/search?q="), opened);
+  T.PREFS.data.rtEnable = false;
+
+  // 손도구
+  click(q('.panel[data-panel="home"] [data-a="hand"]'));
+  ok("손도구를 누르면 도구가 hand가 되고 화면에 표시된다", T.ANNOTATE.tool === "hand" && $("viewer").dataset.tool === "hand" && q('.panel[data-panel="home"] [data-a="hand"]').classList.contains("on"));
+  const v = $("viewer"); v.scrollLeft = 100; v.scrollTop = 100;
+  v.dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, clientX: 200, clientY: 200, button: 0 }));
+  v.dispatchEvent(new window.MouseEvent("pointermove", { bubbles: true, clientX: 170, clientY: 150, button: 0 }));
+  ok("손도구로 끌면 그만큼 화면이 움직인다", v.scrollLeft === 130 && v.scrollTop === 150, v.scrollLeft + "," + v.scrollTop);
+  v.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+  click(q('.panel[data-panel="home"] [data-a="hand"]'));
+  ok("손도구를 다시 누르면 선택 도구로 돌아온다", T.ANNOTATE.tool === "select");
+
+  // 크기 조절 핸들 (사각형 오른쪽 아래 모서리를 끌기)
+  T.ANNOTATE.addShape({ type: "rect", color: "#1d8a4c", width: 2, p1: [100, 100], p2: [200, 200] });
+  const rect = T.ANNOTATE.byPage[1][0]; T.ANNOTATE.select(rect);
+  const pw = $("pageWrap"); const pe = (t, x, y) => pw.dispatchEvent(new window.MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+  pe("pointerdown", 200, 200); pe("pointermove", 260, 240); pe("pointerup", 260, 240);
+  ok("모서리 핸들을 끌면 도형 크기가 바뀐다", rect.p2[0] === 260 && rect.p2[1] === 240 && rect.p1[0] === 100, JSON.stringify([rect.p1, rect.p2]));
+  T.ANNOTATE.undo();
+  ok("크기 조절도 실행 취소로 되돌려진다", rect.p2[0] === 200 && rect.p2[1] === 200, JSON.stringify(rect.p2));
+
+  // 모바일: 서랍처럼 열리는 페이지 패널
+  window.matchMedia = (q2) => ({ matches: q2.includes("max-width:720px"), addListener() {}, addEventListener() {} });
+  ok("모바일 화면 판정이 된다", window.isMobile() === true);
+  window.setLeftPanel(false); ok("모바일에서 페이지 패널은 닫혀 있다", !window.leftPanelShown());
+  click(q('.panel[data-panel="view"] [data-a="toggleThumbs"]'));
+  ok("페이지 패널 버튼으로 서랍이 열린다", $("leftPanel").classList.contains("mob-open"));
+  click(q("#thumbs .thumb")); await new Promise((r) => setTimeout(r, 10));
+  ok("모바일에서 썸네일을 고르면 서랍이 자동으로 닫힌다", !$("leftPanel").classList.contains("mob-open"));
+  ok("⋯ 메뉴 버튼으로 사이트 링크 메뉴가 열린다", (click($("moreBtn")), !$("siteMenu").hidden));
+  click(q("#fileBtn"));
+  const hasSub = q("#fileMenu .has-sub"); click(hasSub);
+  ok("하위 메뉴는 눌러서 펼쳐진다 (터치에서는 hover가 없으니까)", hasSub.classList.contains("open"));
+  click(hasSub); ok("한 번 더 누르면 접힌다", !hasSub.classList.contains("open"));
+  window.matchMedia = undefined;
+
+  // 도구 상자 보이기/숨기기
+  click(q(".tabv[data-dd='view']")); const tbItem = [...window.document.querySelectorAll("#dd .has-sub")].find((x) => x.textContent.includes("도구 상자"));
+  click(tbItem); click(tbItem.querySelector('[data-act="toggleStatus"]'));
+  ok("도구 상자에서 '상태 표시줄'을 끄면 하단바가 숨겨진다", window.document.body.classList.contains("hide-status"));
+  window.ACT = T.ACT; T.ACT.toggleStatus(); ok("다시 켜면 보인다", !window.document.body.classList.contains("hide-status"));
+
+  // 사전·번역
+  T.ACT.dict(); ok("한컴 사전 창이 열린다", $("dictWin").classList.contains("open"));
+  $("dictText").value = "지평선"; click(q('[data-dict="stdict"]'));
+  ok("표준국어대사전 버튼이 그 낱말로 새 탭을 연다", opened.includes("stdict.korean.go.kr") && opened.includes(encodeURIComponent("지평선")), opened);
+  click(q('[data-dict="translate"]'));
+  ok("번역 버튼은 구글 번역으로 연다", opened.includes("translate.google.com") && opened.includes(encodeURIComponent("지평선")), opened);
+
+  // 변환
+  T.ACT.convertH(); ok("HWP 변환은 불가능하다고 안내하고 창을 열지 않는다", $("toast").textContent.includes("비공개") && !$("convertWin").classList.contains("open"));
+  T.ACT.convertD(); ok("DOCX 변환 창이 열리고 DOCX가 미리 선택된다", $("convertWin").classList.contains("open") && window.document.querySelector('input[name="cvFmt"]:checked').value === "docx");
+  window.document.querySelector('input[name="cvFmt"][value="img"]').checked = true;
+  let dl2 = null; const ce2 = window.document.createElement.bind(window.document);
+  window.document.createElement = (tag) => { const el = ce2(tag); if (tag === "a") { el.click = () => { dl2 = el.download; }; } return el; };
+  await T.CONVERT.run();
+  ok("그림 변환(문서 전체 3쪽)은 ZIP 파일로 내려받는다", dl2 && dl2.endsWith(".zip"), dl2);
+  window.document.querySelector('input[name="cvRange"][value="current"]').checked = true;
+  window.document.querySelector('input[name="cvFmt"][value="img"]').checked = true; T.ACT.convertI();
+  await T.CONVERT.run();
+  ok("그림 변환(현재 쪽만)은 PNG 한 장으로 내려받는다", dl2 && dl2.endsWith(".png"), dl2);
+
+  // 서식 문서 / 확대 창
+  click($("fileBtn")); click(q('#fileMenu [data-a="tplLined"]')); await new Promise((r) => setTimeout(r, 30));
+  ok("서식 문서(줄 노트)를 고르면 새 문서가 열린다", T.STATE.fileName === "줄 노트.pdf" && !!T.STATE.pdfDoc, T.STATE.fileName);
+  T.ACT.zoomTo(); $("zoomPreset").value = "200"; click($("zoomApply")); await new Promise((r) => setTimeout(r, 20));
+  ok("확대/축소 창에서 200%를 고르면 배율이 2가 된다", Math.abs(T.STATE.scale - 2) < 1e-9, T.STATE.scale);
+  T.ACT.zoomTo(); $("zoomPreset").value = "width"; click($("zoomApply")); await new Promise((r) => setTimeout(r, 20));
+  ok("확대/축소 창에서 '폭 맞춤'을 고르면 맞춤 모드가 된다", T.STATE.fitMode === "width", T.STATE.fitMode);
 
   console.log("\n=== 결과 ===");
   let fail = 0;

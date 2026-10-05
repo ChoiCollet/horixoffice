@@ -50,7 +50,7 @@ function distToSeg(px, py, x1, y1, x2, y2) {
 }
 
 // 저장용: 원본 PDF 위에 주석을 벡터로 그리고, 쪽 회전·스티커노트(실제 PDF 메모)까지 반영
-async function buildAnnotatedPDF(PL, bytes, byPage, rotations) {
+async function buildAnnotatedPDF(PL, bytes, byPage, rotations, opts) {
   const { PDFDocument, rgb, degrees, LineCapStyle, PDFName, PDFHexString, PDFArray } = PL;
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const col = (hex) => {
@@ -99,7 +99,22 @@ async function buildAnnotatedPDF(PL, bytes, byPage, rotations) {
       }
     }
   });
+  if (opts && opts.embed) {
+    // 다시 열었을 때 주석을 계속 편집할 수 있도록 원본과 주석 데이터를 함께 보관
+    await doc.attach(opts.embed.original, "horixoffice-original.pdf", { mimeType: "application/pdf", description: "HorixOffice 편집 이어가기용 원본" });
+    await doc.attach(new TextEncoder().encode(JSON.stringify(opts.embed.session)), "horixoffice-session.json", { mimeType: "application/json", description: "HorixOffice 주석 데이터" });
+  }
   return doc.save();
+}
+
+// 저장된 파일에 HorixOffice 편집 데이터가 들어있는지 확인
+async function detectHorixSession(doc) {
+  let atts; try { atts = await doc.getAttachments(); } catch (e) { return null; }
+  if (!atts || !atts["horixoffice-session.json"] || !atts["horixoffice-original.pdf"]) return null;
+  try {
+    const session = JSON.parse(new TextDecoder().decode(atts["horixoffice-session.json"].content));
+    return { session, original: atts["horixoffice-original.pdf"].content };
+  } catch (e) { return null; }
 }
 
 /* ---------- 주석 도구 본체 ---------- */
@@ -117,6 +132,7 @@ const ANNOTATE = {
   dirty: false,
   textCache: {},
   noteEditing: null,
+  drag: null, av: null, curPage: null, startV: null, _blockSel: false,
 
   reset(numPages) {
     this.byPage = {};
@@ -131,14 +147,13 @@ const ANNOTATE = {
 
   /* ----- 도구/색/두께 ----- */
   setTool(tool) {
-    if (STATE.viewMode === "continuous" && tool !== "select") {
-      showToast("연속 보기에서는 주석을 그릴 수 없어요. 한 쪽씩 보기로 바꿔 주세요.");
-      return;
-    }
     this.tool = tool;
     this.cur = null;
-    if (tool !== "select") { this.selected = null; if (!this.visible) this.setVisible(true); }
-    $("annoCanvas").style.cursor = tool === "select" ? "default" : "crosshair";
+    if (tool !== "select") { this.selected = null; }
+    if (!["select", "hand"].includes(tool) && !this.visible) this.setVisible(true);
+    const v = $("viewer");
+    v.dataset.tool = tool === "select" ? "select" : tool === "hand" ? "hand" : "draw";
+    v.dataset.sel = this.selected ? "1" : "";
     this.syncToolUI();
     this.redraw();
   },
@@ -146,6 +161,7 @@ const ANNOTATE = {
   syncToolUI() {
     document.querySelectorAll(".atool").forEach((b) => b.classList.toggle("on", b.dataset.tool === this.tool));
     document.querySelectorAll('[data-a="select"]').forEach((b) => b.classList.toggle("on", this.tool === "select"));
+    document.querySelectorAll('[data-a="hand"]').forEach((b) => b.classList.toggle("on", this.tool === "hand"));
   },
 
   setVisible(v) {
@@ -193,6 +209,7 @@ const ANNOTATE = {
     this._apply(op, false);
     this.ops.push(op); this.redoStack = []; this.dirty = true;
     if (this.selected && this._pageOf(this.selected) === null) this.selected = null;
+    $("viewer").dataset.sel = this.selected ? "1" : "";
     this.redraw();
   },
 
@@ -251,29 +268,41 @@ const ANNOTATE = {
   },
 
   /* ----- 선택 ----- */
-  select(shape) { this.selected = shape || null; this.redraw(); },
+  select(shape) { this.selected = shape || null; $("viewer").dataset.sel = this.selected ? "1" : ""; this.redraw(); },
 
   /* ----- 그리기 ----- */
-  onPageRendered(w, h) {
-    const c = $("annoCanvas");
+  // 지금 화면에 보이는 쪽들 (한 쪽씩 보기: 1개, 연속 보기: 여러 개)
+  views() {
+    if (STATE.viewMode === "continuous") return (typeof CONTVIEW !== "undefined" && CONTVIEW.views) || [];
+    return STATE.pageViewport ? [{ page: STATE.currentPage, vp: STATE.pageViewport, canvas: $("annoCanvas"), el: $("pageWrap") }] : [];
+  },
+
+  sizeCanvas(c, w, h) {
     const dpr = window.devicePixelRatio || 1;
     c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr);
     c.style.width = w + "px"; c.style.height = h + "px";
+  },
+
+  onPageRendered(w, h) {
+    this.sizeCanvas($("annoCanvas"), w, h);
     if (this.selected && !(this.byPage[STATE.currentPage] || []).includes(this.selected)) this.selected = null;
     this.redraw();
   },
 
-  redraw() {
-    const c = $("annoCanvas"), vp = STATE.pageViewport;
+  redraw() { this.views().forEach((v) => this.redrawView(v)); },
+
+  redrawView(view) {
+    const c = view.canvas, vp = view.vp;
     if (!c || !vp) return;
     const ctx = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
     if (this.visible) {
-      (this.byPage[STATE.currentPage] || []).forEach((s) => this.drawShape(ctx, s, vp));
-      if (this.cur) this.drawShape(ctx, this.cur, vp);
-      if (this.selected && (this.byPage[STATE.currentPage] || []).includes(this.selected)) this.drawSelection(ctx, this.selected, vp);
+      const list = this.byPage[view.page] || [];
+      list.forEach((s) => this.drawShape(ctx, s, vp));
+      if (this.cur && this.curPage === view.page) this.drawShape(ctx, this.cur, vp);
+      if (this.selected && list.includes(this.selected)) this.drawSelection(ctx, this.selected, vp);
     }
     ctx.restore();
   },
@@ -286,17 +315,37 @@ const ANNOTATE = {
     return [s.p1, s.p2].filter(Boolean).map(P);
   },
 
+  // 크기 조절 핸들: [{ id, x, y }]  (x,y는 화면 좌표)
+  handlesOf(s, vp) {
+    const P = (p) => this.toViewport(p, vp);
+    if (["line", "arrow", "underline", "strike"].includes(s.type)) {
+      return [["p1", ...P(s.p1)], ["p2", ...P(s.p2)]].map(([id, x, y]) => ({ id, x, y }));
+    }
+    if (["rect", "ellipse", "highlight"].includes(s.type)) {
+      return [[1, 1], [2, 1], [2, 2], [1, 2]].map(([xi, yi]) => {
+        const [x, y] = P([s["p" + xi][0], s["p" + yi][1]]);
+        return { id: `c${xi}${yi}`, xi, yi, x, y };
+      });
+    }
+    return [];
+  },
+
   drawSelection(ctx, s, vp) {
     const pts = this.vpPoints(s, vp);
     if (!pts.length) return;
-    let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
-    let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
+    const x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
+    const y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
     const pad = s.type === "note" ? 12 : 6 + (s.width || 2) * (vp.scale || 1) / 2;
     ctx.save();
     ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2; ctx.strokeStyle = "#2f6fed";
     ctx.strokeRect(x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2);
+    ctx.setLineDash([]); ctx.fillStyle = "#fff"; ctx.lineWidth = 1.5;
+    const hs = this.handleSize();
+    this.handlesOf(s, vp).forEach((h) => { ctx.beginPath(); ctx.rect(h.x - hs / 2, h.y - hs / 2, hs, hs); ctx.fill(); ctx.stroke(); });
     ctx.restore();
   },
+
+  handleSize() { return window.matchMedia && matchMedia("(pointer:coarse)").matches ? 14 : 9; },
 
   drawShape(ctx, s, vp) {
     const k = vp.scale || 1;
@@ -347,9 +396,16 @@ const ANNOTATE = {
     }
   },
 
-  hitTest(v) {
-    const vp = STATE.pageViewport; if (!vp) return null;
-    const list = this.byPage[STATE.currentPage] || [];
+  hitHandle(v, view) {
+    const s = this.selected;
+    if (!s || !view || !(this.byPage[view.page] || []).includes(s)) return null;
+    const tol = this.handleSize() / 2 + 5;
+    return this.handlesOf(s, view.vp).find((h) => Math.hypot(v[0] - h.x, v[1] - h.y) <= tol) || null;
+  },
+
+  hitTest(v, view) {
+    const vp = view && view.vp; if (!vp) return null;
+    const list = this.byPage[view.page] || [];
     for (let i = list.length - 1; i >= 0; i--) {
       const s = list[i], k = vp.scale || 1, tol = Math.max(6, (s.width || 2) * k / 2 + 4);
       const pts = this.vpPoints(s, vp);
@@ -381,15 +437,13 @@ const ANNOTATE = {
   },
 
   /* ----- 포인터 입력 ----- */
-  initPointerEvents() {
-    const c = $("annoCanvas");
-    let drag = null, startV = null;
-    const vpOf = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-    const toPdf = (v) => STATE.pageViewport.convertToPdfPoint(v[0], v[1]);
+  // 한 쪽을 감싼 요소(el)에 마우스·터치 입력을 연결해요. getView()는 그 쪽의 화면 정보를 돌려줘요.
+  bindContainer(el, getView) {
     const MARKUP = ["highlight", "underline", "strike"];
-
+    const vOf = (e, view) => { const r = view.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const toPdf = (v, view) => view.vp.convertToPdfPoint(v[0], v[1]);
     const constrain = (a, b, tool) => {
-      let [x, y] = b; const dx = x - a[0], dy = y - a[1];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
       if (tool === "line" || tool === "arrow") {
         const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), len = Math.hypot(dx, dy);
         return [a[0] + len * Math.cos(ang), a[1] + len * Math.sin(ang)];
@@ -400,100 +454,140 @@ const ANNOTATE = {
       }
       return b;
     };
+    const showPop = (note, x, y, ms) => {
+      const pop = $("notePop");
+      pop.textContent = note.text || "(내용 없음)";
+      pop.style.left = Math.min(x + 14, innerWidth - 270) + "px"; pop.style.top = y + 14 + "px"; pop.hidden = false;
+      if (ms) { clearTimeout(this._popTm); this._popTm = setTimeout(() => { pop.hidden = true; }, ms); }
+    };
 
-    c.addEventListener("pointerdown", (e) => {
-      if (!STATE.pdfDoc || e.button !== 0 || !STATE.pageViewport) return;
-      const v = vpOf(e);
+    el.addEventListener("pointerdown", (e) => {
+      if (!STATE.pdfDoc || e.button !== 0 || this.tool === "hand") return;
+      if (e.target.closest && e.target.closest(".capC") && CAPTURE.active) return;
+      const view = getView(); if (!view || !view.vp) return;
+      this.av = view;
+      if (STATE.currentPage !== view.page) { STATE.currentPage = view.page; $("pageInput").value = view.page; THUMBS.setActive(view.page); }
+      const v = vOf(e, view);
+
       if (this.tool === "select") {
         if (!this.visible) return;
-        const hit = this.hitTest(v);
+        const h = this.hitHandle(v, view);
+        if (h) {
+          const s = this.selected;
+          this.drag = { mode: "resize", h, shape: s, view, before: { p1: [...s.p1], p2: [...s.p2] } };
+          this._blockSel = true; el.setPointerCapture(e.pointerId); e.preventDefault(); return;
+        }
+        const hit = this.hitTest(v, view);
         this.select(hit);
-        if (hit) { drag = { mode: "move", last: toPdf(v), dx: 0, dy: 0, shape: hit }; c.setPointerCapture(e.pointerId); }
+        $("viewer").dataset.sel = hit ? "1" : "";
+        if (hit) {
+          this.drag = { mode: "move", last: toPdf(v, view), dx: 0, dy: 0, shape: hit, view };
+          this._blockSel = true; el.setPointerCapture(e.pointerId); e.preventDefault();
+          if (hit.type === "note") showPop(hit, e.clientX, e.clientY, 3000);
+        }
         return;
       }
       if (this.tool === "note") {
-        this.notePending = toPdf(v); this.noteEditing = null;
+        this.notePending = toPdf(v, view); this.notePage = view.page; this.noteEditing = null;
         $("noteText").value = ""; openModal("noteOverlay"); return;
       }
-      startV = v;
-      const p = toPdf(v), color = this.colorFor(this.tool);
+      this.startV = v;
+      const p = toPdf(v, view), color = this.colorFor(this.tool);
       const w = MARKUP.includes(this.tool) ? Math.min(this.width, 2) : this.width;
       this.cur = this.tool === "free"
         ? { type: "free", color, width: w, points: [p] }
         : { type: this.tool, color, width: w, p1: p, p2: p, preview: MARKUP.includes(this.tool) };
-      drag = { mode: "draw" };
-      c.setPointerCapture(e.pointerId);
+      this.curPage = view.page;
+      this.drag = { mode: "draw", view };
+      el.setPointerCapture(e.pointerId);
     });
 
-    c.addEventListener("pointermove", (e) => {
-      const v = vpOf(e);
-      if (drag && drag.mode === "draw" && this.cur) {
-        const p = toPdf(e.shiftKey ? constrain(startV, v, this.tool) : v);
+    el.addEventListener("pointermove", (e) => {
+      const d = this.drag;
+      if (d && d.mode === "draw" && this.cur) {
+        const v = vOf(e, d.view);
+        const p = toPdf(e.shiftKey ? constrain(this.startV, v, this.tool) : v, d.view);
         if (this.cur.type === "free") this.cur.points.push(p); else this.cur.p2 = p;
-        this.redraw();
-      } else if (drag && drag.mode === "move") {
-        const p = toPdf(v), dx = p[0] - drag.last[0], dy = p[1] - drag.last[1];
-        shapeTranslate(drag.shape, dx, dy); drag.dx += dx; drag.dy += dy; drag.last = p;
-        this.redraw();
-      } else if (STATE.pdfDoc && STATE.pageViewport && this.visible) {
-        const hit = this.tool === "select" ? this.hitTest(v) : null;
-        c.style.cursor = this.tool === "select" ? (hit ? "move" : "default") : "crosshair";
-        const pop = $("notePop");
-        if (hit && hit.type === "note") {
-          pop.textContent = hit.text || "(내용 없음)";
-          pop.style.left = e.clientX + 14 + "px"; pop.style.top = e.clientY + 14 + "px"; pop.hidden = false;
-        } else pop.hidden = true;
+        this.redrawView(d.view);
+      } else if (d && d.mode === "move") {
+        const p = toPdf(vOf(e, d.view), d.view), dx = p[0] - d.last[0], dy = p[1] - d.last[1];
+        shapeTranslate(d.shape, dx, dy); d.dx += dx; d.dy += dy; d.last = p;
+        this.redrawView(d.view);
+      } else if (d && d.mode === "resize") {
+        const p = toPdf(vOf(e, d.view), d.view), s = d.shape, h = d.h;
+        if (h.id === "p1" || h.id === "p2") s[h.id] = p;
+        else { s["p" + h.xi] = [p[0], s["p" + h.xi][1]]; s["p" + h.yi] = [s["p" + h.yi][0], p[1]]; }
+        this.redrawView(d.view);
+      } else if (STATE.pdfDoc && this.visible && this.tool === "select" && e.pointerType !== "touch") {
+        const view = getView(); if (!view || !view.vp) return;
+        const v = vOf(e, view);
+        const handle = this.hitHandle(v, view), hit = handle ? null : this.hitTest(v, view);
+        el.style.cursor = handle ? "nwse-resize" : hit ? "move" : "";
+        if (hit && hit.type === "note") showPop(hit, e.clientX, e.clientY); else $("notePop").hidden = true;
       }
     });
 
     const finish = async () => {
-      if (!drag) return;
-      const d = drag; drag = null;
+      const d = this.drag; if (!d) return;
+      this.drag = null;
       if (d.mode === "move") {
         if (Math.abs(d.dx) + Math.abs(d.dy) > 1e-6) {
-          shapeTranslate(d.shape, -d.dx, -d.dy); // 되돌려 놓고 기록을 통해 다시 적용
+          shapeTranslate(d.shape, -d.dx, -d.dy);
           this.doOp({ k: "move", shape: d.shape, dx: d.dx, dy: d.dy });
         }
         return;
       }
+      if (d.mode === "resize") {
+        const s = d.shape, after = { p1: [...s.p1], p2: [...s.p2] };
+        Object.assign(s, d.before);
+        if (JSON.stringify(after) !== JSON.stringify(d.before)) this.doOp({ k: "prop", shape: s, before: d.before, after });
+        else this.redrawView(d.view);
+        return;
+      }
       const s = this.cur; this.cur = null;
       if (!s) return;
-      const a = this.toViewport(s.p1 || s.points[0], STATE.pageViewport), b = this.toViewport(s.p2 || s.points[s.points.length - 1], STATE.pageViewport);
+      const view = d.view, page = view.page;
+      const a = this.toViewport(s.p1 || s.points[0], view.vp), b = this.toViewport(s.p2 || s.points[s.points.length - 1], view.vp);
       const tiny = Math.hypot(b[0] - a[0], b[1] - a[1]) < 3;
-      if (s.type === "free") { this.addShape(s); return; }
+      if (s.type === "free") { this.addShapes([s], page); return; }
       if (MARKUP.includes(s.type)) {
-        const items = await this.textItems(STATE.currentPage);
+        const items = await this.textItems(page);
         const lines = tiny ? [] : textLinesInSelection(items, s.p1, s.p2);
-        const page = STATE.currentPage;
         if (lines.length) {
-          const shapes = lines.map((l) => {
+          this.addShapes(lines.map((l) => {
             if (s.type === "highlight") return { type: "highlight", color: s.color, width: 0, p1: [l.x0, l.base - l.h * 0.2], p2: [l.x1, l.base + l.h * 0.85] };
             const y = s.type === "underline" ? l.base - l.h * 0.12 : l.base + l.h * 0.3;
             return { type: s.type, color: s.color, width: s.width, p1: [l.x0, y], p2: [l.x1, y] };
-          });
-          this.addShapes(shapes, page);
-        } else if (!tiny) { // 글자가 없는 쪽(스캔본 등)은 그린 대로
+          }), page);
+        } else if (!tiny) {
           delete s.preview;
           if (s.type !== "highlight") s.p2 = [s.p2[0], s.p1[1]];
           this.addShapes([s], page);
-        } else this.redraw();
+        } else this.redrawView(view);
         return;
       }
-      if (tiny) { this.redraw(); return; }
-      this.addShape(s);
+      if (tiny) { this.redrawView(view); return; }
+      this.addShapes([s], page);
     };
-    c.addEventListener("pointerup", finish);
-    c.addEventListener("pointercancel", () => { drag = null; this.cur = null; this.redraw(); });
-    c.addEventListener("pointerleave", () => { $("notePop").hidden = true; });
+    el.addEventListener("pointerup", finish);
+    el.addEventListener("pointercancel", () => { const v = this.drag && this.drag.view; this.drag = null; this.cur = null; if (v) this.redrawView(v); });
+    el.addEventListener("pointerleave", () => { $("notePop").hidden = true; });
+    // 선택 도구로 주석을 잡았을 땐 글자 선택이 같이 시작되지 않게 막아요
+    el.addEventListener("mousedown", (e) => { if (this._blockSel) { e.preventDefault(); this._blockSel = false; } }, true);
 
-    c.addEventListener("dblclick", (e) => {
-      if (this.tool !== "select" || !STATE.pageViewport) return;
-      const hit = this.hitTest(vpOf(e));
+    el.addEventListener("dblclick", (e) => {
+      if (this.tool !== "select") return;
+      const view = getView(); if (!view || !view.vp) return;
+      const hit = this.hitTest(vOf(e, view), view);
       if (hit && hit.type === "note") {
         this.noteEditing = hit; $("noteText").value = hit.text || "";
         openModal("noteOverlay"); $("noteText").focus();
       }
     });
+  },
+
+  initPointerEvents() {
+    this.bindContainer($("pageWrap"), () => this.views()[0]);
 
     $("noteConfirm").addEventListener("click", () => {
       const text = $("noteText").value.trim() || "(내용 없음)";
@@ -501,7 +595,7 @@ const ANNOTATE = {
         const s = this.noteEditing;
         if (s.text !== text) this.doOp({ k: "prop", shape: s, before: { text: s.text }, after: { text } });
       } else if (this.notePending) {
-        this.addShape({ type: "note", color: "#ffd933", width: 1, p1: this.notePending, text });
+        this.addShapes([{ type: "note", color: "#ffd933", width: 1, p1: this.notePending, text }], this.notePage || STATE.currentPage);
       }
       this.noteEditing = null; this.notePending = null;
       closeModal("noteOverlay");
@@ -518,17 +612,27 @@ const ANNOTATE = {
       } else if (!typing && !e.ctrlKey && (k === "delete" || k === "backspace") && this.selected) {
         e.preventDefault(); this.deleteSelected();
       } else if (!typing && k === "escape" && $("presentOverlay") && !$("presentOverlay").classList.contains("open")) {
-        if (this.cur) { this.cur = null; drag = null; this.redraw(); }
+        if (this.cur) { this.cur = null; this.drag = null; this.redraw(); }
         else if (this.selected) this.select(null);
         else if (this.tool !== "select") this.setTool("select");
       }
     });
   },
 
+  // 저장했던 편집 데이터를 다시 불러오기
+  restore(session) {
+    if (!session || !session.byPage) return;
+    Object.keys(session.byPage).forEach((p) => { this.byPage[p] = session.byPage[p]; });
+    STATE.pageRotations = session.rotations || {};
+    this.dirty = false;
+  },
+
   /* ----- 저장용 바이트 만들기 ----- */
   async buildBytes() {
     try {
-      return await buildAnnotatedPDF(PDFLib, STATE.fileBytes, this.byPage, STATE.pageRotations);
+      const changed = this.hasAny() || Object.keys(STATE.pageRotations).some((k) => STATE.pageRotations[k]);
+      const embed = changed ? { original: new Uint8Array(STATE.fileBytes), session: { v: 1, byPage: this.byPage, rotations: STATE.pageRotations } } : null;
+      return await buildAnnotatedPDF(PDFLib, STATE.fileBytes, this.byPage, STATE.pageRotations, { embed });
     } catch (e) {
       console.warn("벡터 저장 실패, 이미지 방식으로 대신 저장해요:", e);
       return this.buildBytesRaster();

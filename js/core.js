@@ -24,6 +24,18 @@ function setPageRotation(p, deg) {
 
 function $(id) { return document.getElementById(id); }
 
+function isMobile() { return !!(window.matchMedia && window.matchMedia("(max-width:720px)").matches); }
+// 왼쪽 페이지 패널: 컴퓨터에선 옆에 붙어 있고, 모바일에선 서랍처럼 열고 닫아요
+function setLeftPanel(show) {
+  const p = $("leftPanel");
+  if (isMobile()) p.classList.toggle("mob-open", !!show);
+  else p.style.display = show ? "" : "none";
+}
+function leftPanelShown() {
+  const p = $("leftPanel");
+  return isMobile() ? p.classList.contains("mob-open") : p.style.display !== "none";
+}
+
 function showToast(msg) {
   const t = $("toast");
   t.textContent = msg;
@@ -55,15 +67,22 @@ function setControlsEnabled(enabled) {
 async function loadPDFFromFile(file) {
   showLoading("PDF를 불러오는 중…");
   try {
-    const buf = await file.arrayBuffer();
+    let buf = await file.arrayBuffer();
     STATE.fileBytes = buf;
     STATE.fileHandle = null;
     STATE.fileName = file.name || "제목 없음.pdf";
     STATE.fileModified = file.lastModified;
     $("docTitle").textContent = STATE.fileName + " - HorixOffice";
 
-    const loadingTask = pdfjsLib.getDocument({ data: buf.slice(0) });
-    const doc = await loadingTask.promise;
+    let doc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    // 이전에 HorixOffice에서 저장한 파일이면 원본과 주석을 꺼내서 계속 편집할 수 있게 해요
+    const found = typeof detectHorixSession === "function" ? await detectHorixSession(doc) : null;
+    if (found) {
+      const o = found.original;
+      buf = o.buffer.slice(o.byteOffset, o.byteOffset + o.byteLength);
+      STATE.fileBytes = buf;
+      doc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    }
 
     STATE.pdfDoc = doc;
     STATE.numPages = doc.numPages;
@@ -81,6 +100,7 @@ async function loadPDFFromFile(file) {
 
     setControlsEnabled(true);
     ANNOTATE.reset(STATE.numPages);
+    if (found) { ANNOTATE.restore(found.session); showToast("이전에 저장한 주석을 편집할 수 있게 불러왔어요."); }
     if (typeof PREFS !== "undefined") {
       ANNOTATE.color = PREFS.data.annoColor; ANNOTATE.width = PREFS.data.annoWidth;
       $("leftPanel").style.display = PREFS.data.thumbs ? "" : "none";
@@ -154,6 +174,7 @@ async function renderCurrentPage() {
   $("statusPage").textContent = `페이지 ${STATE.currentPage} / ${STATE.numPages}`;
 
   ANNOTATE.onPageRendered(viewport.width, viewport.height);
+  TEXTLAYER.render(page, viewport, $("textLayer"));
   CAPTURE.onPageRendered(viewport.width, viewport.height);
   THUMBS.setActive(STATE.currentPage);
 }
