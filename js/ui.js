@@ -5,7 +5,7 @@ const NEED = 1, DIS = 2;
 const PREFS_KEY = "horix_prefs_v1";
 const PREFS = {
   data: Object.assign(
-    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light", rtEnable: false, rtEngine: "naver", ui: { ribbon: true, quick: true, status: true } },
+    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light", rtEnable: false, rtEngine: "naver", pres: { type: "none", from: "left", dur: 1, monitor: "default" }, ui: { ribbon: true, quick: true, status: true } },
     (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; } })()
   ),
   save() { localStorage.setItem(PREFS_KEY, JSON.stringify(this.data)); },
@@ -239,10 +239,6 @@ Object.assign(ACT, {
   },
 });
 
-function setTr(v) {
-  $("transitionSelect").value = v;
-  document.querySelectorAll(".tr").forEach((x) => x.classList.toggle("on", x.dataset.tr === v));
-}
 const fmtDate = (s) => {
   const m = /D:(\d{4})(\d\d)(\d\d)(\d\d)?(\d\d)?(\d\d)?/.exec(s || "");
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}:${m[6] || "00"}` : "-";
@@ -253,7 +249,6 @@ Object.assign(ACT, {
     THUMBS.rerenderOne(STATE.currentPage);
     refreshView();
   },
-  trNone: () => setTr("none"), trSlide: () => setTr("slide"), trFade: () => setTr("fade"),
   docinfo: async () => {
     if (!STATE.pdfDoc) return showToast("먼저 PDF를 열어주세요.");
     const md = await STATE.pdfDoc.getMetadata().catch(() => ({ info: {} })), i = md.info || {};
@@ -327,8 +322,8 @@ const MENUS = {
       ["note", "스티커노트"], ["highlight", "강조"], ["underline", "밑줄"], ["strike", "취소선"]]
       .map(([t, l]) => [l, "", "tool_" + t, NEED, () => ANNOTATE.tool === t])],
   present: [["처음부터(S)", "F5", "presentStart", NEED], ["현재 쪽부터(A)", "Shift+F5", "present", NEED], "-",
-    ["화면 전환(B)", ">", [["없음", "", "trNone", 0, () => $("transitionSelect").value === "none"], ["밀어내기", "", "trSlide", 0, () => $("transitionSelect").value === "slide"], ["밝기 변화", "", "trFade", 0, () => $("transitionSelect").value === "fade"]]],
-    ["효과 설정(C)", ">", [["준비 중", "", "soon"]], DIS]],
+    ["화면 전환(B)", ">", TRANS_TYPES.map((t) => [t.name, "", "tr_" + t.id, 0, () => presSettings().type === t.id])],
+    ["효과 설정(C)…", "", "effectSettings"]],
   tools: [["선택(S)", "Shift+Q", "select", 0, () => ANNOTATE.tool === "select"], ["손도구(H)", "Shift+W", "hand", NEED, () => ANNOTATE.tool === "hand"],
     ["화면 캡처(A)", "Ctrl+Shift+C", "capture", NEED], ["선택 영역 내보내기(E)", "Shift+A", "capture", NEED], "-",
     ["한컴 사전(D)…", "F12", "dict"], "-", ["실시간 검색 설정(B)…", "", "rtSettings"], "-",
@@ -619,4 +614,74 @@ document.addEventListener("DOMContentLoaded", () => {
   }, true);
   // 모바일 위쪽 ⋯ 메뉴 닫기
   document.addEventListener("click", (e) => { if (!e.target.closest("#siteMenu,#moreBtn")) $("siteMenu").hidden = true; });
+});
+
+
+/* =========================================================
+   프레젠테이션 파트: 전환 효과 고르기 · 효과 설정 · 모니터 · 미리보기
+   ========================================================= */
+function savePres(patch) {
+  PREFS.data.pres = Object.assign(presSettings(), patch); PREFS.save(); syncPresUi();
+}
+function syncPresUi() {
+  const s = presSettings();
+  document.querySelectorAll(".tr").forEach((b) => b.classList.toggle("on", b.dataset.tr === s.type));
+  $("presDur").value = Number(s.dur).toFixed(1);
+  if ([...$("presMonitor").options].some((o) => o.value === String(s.monitor))) $("presMonitor").value = String(s.monitor);
+}
+function fillMonitors() {
+  ["presMonitor", "effMonitor"].forEach((id) => {
+    const sel = $(id), cur = presSettings().monitor;
+    sel.innerHTML = '<option value="default">기본 모니터</option>' +
+      PRESENT.screens.map((sc, i) => `<option value="${i}">${escapeHtml(sc.label || "모니터 " + (i + 1))}${sc.isPrimary ? " (주 모니터)" : ""}</option>`).join("");
+    if ([...sel.options].some((o) => o.value === String(cur))) sel.value = String(cur);
+  });
+}
+PRESENT.loadScreens = async function () {
+  if (!window.getScreenDetails) { showToast("이 브라우저는 모니터 선택을 지원하지 않아요. (크롬·엣지에서 가능해요)"); return false; }
+  try { const d = await window.getScreenDetails(); this.screens = Array.from(d.screens); fillMonitors(); return true; }
+  catch (e) { showToast("모니터 정보를 가져오지 못했어요. 권한을 허용해 주세요."); return false; }
+};
+function effForm() { return { type: $("effType").value, from: $("effFrom").value, dur: Math.max(0, Math.min(10, Number($("effDur").value) || 0)), monitor: $("effMonitor").value }; }
+function effRefreshDirState() { $("effFrom").disabled = !TRANS_TYPES.find((t) => t.id === $("effType").value).dir; }
+function effPlay() {
+  const f = effForm(), c = $("effPreview");
+  if (!STATE.pdfDoc) {
+    const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = "#aab"; x.font = "14px sans-serif"; x.textAlign = "center"; x.fillText("PDF를 열면 여기서 미리 볼 수 있어요", c.width / 2, c.height / 2);
+    return;
+  }
+  PRESENT.previewOn(c, f.type, f.from, f.dur);
+}
+
+Object.assign(ACT, {
+  presentStart: () => PRESENT.open(1),
+  present: () => PRESENT.open(STATE.currentPage),
+  setTransition: (type, withPreview) => {
+    savePres({ type });
+    if (withPreview) { const s = presSettings(); PRESENT.previewOnViewer(type, s.from, s.dur); }
+  },
+  effectSettings: () => {
+    const s = presSettings();
+    $("effType").value = s.type; $("effFrom").value = s.from; $("effDur").value = Number(s.dur).toFixed(1);
+    fillMonitors(); $("effFindMonitors").hidden = !window.getScreenDetails;
+    effRefreshDirState();
+    openModal("effectWin"); centerWin($("effectWin"));
+    setTimeout(effPlay, 120);
+  },
+});
+TRANS_TYPES.forEach((t) => { ACT["tr_" + t.id] = () => ACT.setTransition(t.id, true); });
+
+document.addEventListener("DOMContentLoaded", () => {
+  syncPresUi(); fillMonitors();
+  document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => ACT.setTransition(b.dataset.tr, true)));
+  $("presDur").addEventListener("change", () => savePres({ dur: Math.max(0, Math.min(10, Number($("presDur").value) || 0)) }));
+  $("presMonitor").addEventListener("change", () => savePres({ monitor: $("presMonitor").value }));
+  $("presMonitor").addEventListener("focus", () => { if (window.getScreenDetails && !PRESENT.screens.length) PRESENT.loadScreens(); }, { once: true });
+  let tm = null; const later = () => { clearTimeout(tm); tm = setTimeout(effPlay, 200); };
+  $("effType").addEventListener("change", () => { effRefreshDirState(); later(); });
+  $("effFrom").addEventListener("change", later); $("effDur").addEventListener("input", later);
+  $("effPlay").addEventListener("click", effPlay);
+  $("effFindMonitors").addEventListener("click", () => PRESENT.loadScreens());
+  $("effOk").addEventListener("click", () => { savePres(effForm()); closeModal("effectWin"); showToast("효과 설정을 저장했어요."); });
 });

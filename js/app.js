@@ -21,7 +21,6 @@ const ACT = {
   zoomIn: () => setZoom(0.15), zoomOut: () => setZoom(-0.15),
   z100: () => { STATE.fitMode = "custom"; STATE.scale = 1; refreshView(); },
   fitPage: () => setFitMode("page"), fitWidth: () => setFitMode("width"), rotate: rotatePage,
-  present: () => PRESENT.open(STATE.currentPage), presentStart: () => PRESENT.open(1),
   merge: () => MERGE.open(), capture: () => CAPTURE.toggle(),
   select: () => ANNOTATE.setTool("select"),
   undo: () => ANNOTATE.undo(), redo: () => ANNOTATE.redo(), clearPage: () => ANNOTATE.clearPage(), clearAll: () => { if (confirm("모든 쪽의 주석을 지울까요?")) ANNOTATE.clearAll(); }, export: () => saveDocument(true),
@@ -94,10 +93,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("pageInput").addEventListener("change", (e) => goToPage(parseInt(e.target.value, 10) || 1));
   $("zoomSlider").addEventListener("input", (e) => { STATE.fitMode = "custom"; STATE.scale = e.target.value / 100; refreshView(); });
 
-  document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".tr").forEach((x) => x.classList.remove("on"));
-    b.classList.add("on"); $("transitionSelect").value = b.dataset.tr;
-  }));
 
   // 인쇄 창
   $("printWin").addEventListener("input", () => PRINTMOD.updatePreview());

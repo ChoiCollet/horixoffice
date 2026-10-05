@@ -31,7 +31,7 @@ const dom = new JSDOM(html, {
   pretendToBeVisual: true,
   runScripts: "dangerously",
   beforeParse(window) {
-    window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: () => () => ({}) });
+    window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: (_, k) => (k === "createLinearGradient" || k === "createRadialGradient" ? () => ({ addColorStop() {} }) : k === "measureText" ? () => ({ width: 10 }) : () => ({})) });
     window.HTMLCanvasElement.prototype.toBlob = function (cb) { cb(new window.Blob(["fake"], { type: "image/png" })); };
     window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/png;base64,AAAA";
     window.URL.createObjectURL = () => "blob:fake";
@@ -511,8 +511,8 @@ async function main() {
   T.ANNOTATE.addShape({ type: "line", color: "#000000", width: 2, p1: [5, 5], p2: [50, 50] });
   T.PRINTMOD.previewPage = 1; await T.PRINTMOD.updatePreview();
   ok("인쇄 미리보기에 주석이 포함된다", drawn >= 1, drawn);
-  drawn = 0; T.PRESENT.page = 1; await T.PRESENT.render(false);
-  ok("프레젠테이션 화면에도 주석이 포함된다", drawn >= 1, drawn);
+  drawn = 0; await T.PRESENT.renderPageCanvas(1, 200, 120);
+  ok("프레젠테이션 화면 그림에도 주석이 포함된다", drawn >= 1, drawn);
   T.ANNOTATE.drawShape = od;
 
   // 저장 — 변경사항이 있으면 만든 바이트로, 저장하면 '변경됨'이 풀린다
@@ -625,6 +625,83 @@ async function main() {
   ok("확대/축소 창에서 200%를 고르면 배율이 2가 된다", Math.abs(T.STATE.scale - 2) < 1e-9, T.STATE.scale);
   T.ACT.zoomTo(); $("zoomPreset").value = "width"; click($("zoomApply")); await new Promise((r) => setTimeout(r, 20));
   ok("확대/축소 창에서 '폭 맞춤'을 고르면 맞춤 모드가 된다", T.STATE.fitMode === "width", T.STATE.fitMode);
+
+  // 31) 프레젠테이션 파트 — 효과 고르기 / 효과 설정 / 슬라이드쇼 진행
+  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  const gal = window.document.querySelectorAll(".panel[data-panel='present'] .tr");
+  ok("프레젠테이션 탭에 전환 효과 9가지가 모두 있다 (모두 사용 가능)", gal.length === 9 && [...gal].every((b) => !b.disabled), gal.length);
+  ok("효과 이름이 한PDF와 같다", [...gal].map((b) => b.title).join() === "없음,닦아내기,밀어내기,계단 모양,모자이크,빗질하기,실선 무늬,자르기,밝기 변화");
+  ok("기본 선택은 '없음'이다", q(".panel[data-panel='present'] .tr.on").dataset.tr === "none");
+  click(q('.panel[data-panel="present"] .tr[data-tr="mosaic"]'));
+  ok("효과를 누르면 그 효과가 선택되고 저장된다", q(".panel[data-panel='present'] .tr.on").dataset.tr === "mosaic" && T.PREFS.data.pres.type === "mosaic");
+  click(q(".tabv[data-dd='present']"));
+  ok("프레젠테이션 ∨ 메뉴에 화면 전환 9개가 있고 현재 효과에 ✓가 붙는다", (() => { const h = $("dd").innerHTML; return TRANS_TYPES_N() === 9 && /<em>✓<\/em><span>모자이크/.test(h); })());
+  function TRANS_TYPES_N() { return ($("dd").innerHTML.match(/data-act="tr_/g) || []).length; }
+  click(q("#dd .has-sub")); click(q('#dd [data-act="tr_wipe"]'));
+  ok("메뉴에서 '닦아내기'를 고르면 바뀐다", T.PREFS.data.pres.type === "wipe");
+
+  // 효과 설정 창
+  click(q('.panel[data-panel="present"] [data-a="effectSettings"]'));
+  ok("효과 설정 창이 열리고 지금 설정이 채워진다", $("effectWin").classList.contains("open") && $("effType").value === "wipe" && $("effFrom").value === "left");
+  $("effType").value = "cut"; fire($("effType"), "change");
+  ok("방향이 없는 효과(자르기)를 고르면 방향 칸이 꺼진다", $("effFrom").disabled);
+  $("effType").value = "push"; fire($("effType"), "change"); $("effFrom").value = "bottom"; $("effDur").value = "0.6";
+  click($("effOk"));
+  ok("확인을 누르면 종류·방향·시간이 저장된다", JSON.stringify([T.PREFS.data.pres.type, T.PREFS.data.pres.from, T.PREFS.data.pres.dur]) === JSON.stringify(["push", "bottom", 0.6]), JSON.stringify(T.PREFS.data.pres));
+  $("presDur").value = "2.5"; fire($("presDur"), "change");
+  ok("리본의 전환 시간 칸을 고치면 바로 저장된다", T.PREFS.data.pres.dur === 2.5);
+  $("presDur").value = "0.3"; fire($("presDur"), "change");
+
+  // 슬라이드쇼 진행 (실제 시간으로 재생)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  T.STATE.numPages = 3; T.STATE.currentPage = 1;
+  await T.PRESENT.open(1); await sleep(60);
+  ok("슬라이드쇼가 열리고 1쪽에서 시작한다", $("presentOverlay").classList.contains("open") && T.PRESENT.page === 1);
+  const t0 = Date.now(); const pr = T.PRESENT.next();
+  await sleep(40);
+  ok("다음 쪽으로 가면 전환이 재생 중이다", T.PRESENT.currentJob && !T.PRESENT.currentJob.done && T.PRESENT.page === 2);
+  await pr;
+  const el = Date.now() - t0;
+  ok("0.3초로 설정한 전환이 약 0.3초 걸려서 끝난다", el >= 250 && el < 700, el + "ms");
+  // 빠르게 두 번 누르기: 첫 전환을 바로 마무리하고 이어서 이동
+  T.PREFS.data.pres.dur = 1;
+  const p1 = T.PRESENT.go(1); await sleep(30);
+  const p2 = T.PRESENT.go(3); await Promise.all([p1, p2]); await sleep(30);
+  ok("전환 중에 또 눌러도 꼬이지 않고 마지막 목적지(3쪽)에 도착한다", T.PRESENT.page === 3 && (!T.PRESENT.currentJob || T.PRESENT.currentJob.done), T.PRESENT.page);
+  ok("마지막 쪽에서 다음을 눌러도 넘어가지 않는다", (await T.PRESENT.next()) === false && T.PRESENT.page === 3);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+  await sleep(1100);
+  ok("← 키로 이전 쪽(2쪽)으로 간다", T.PRESENT.page === 2, T.PRESENT.page);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true })); await sleep(1100);
+  ok("Home 키는 첫 쪽으로 간다", T.PRESENT.page === 1);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true })); await sleep(1100);
+  ok("End 키는 마지막 쪽으로 간다", T.PRESENT.page === 3);
+  const ts = (type, x, y) => $("presentOverlay").dispatchEvent(Object.assign(new window.Event(type, { bubbles: true }), { changedTouches: [{ clientX: x, clientY: y }] }));
+  ts("touchstart", 300, 200); ts("touchend", 100, 205); await sleep(1100);
+  ok("오른쪽→왼쪽으로 밀면(스와이프) 다음 쪽 — 마지막 쪽이라 그대로 3쪽", T.PRESENT.page === 3);
+  ts("touchstart", 100, 200); ts("touchend", 300, 205); await sleep(1100);
+  ok("왼쪽→오른쪽으로 밀면 이전 쪽(2쪽)으로 간다", T.PRESENT.page === 2, T.PRESENT.page);
+  $("presentOverlay").dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 10, clientY: 50 })); await sleep(50);
+  ok("화면 왼쪽 가장자리를 누르면 이전 쪽 (스와이프 직후 클릭은 무시되므로 잠시 뒤 확인)", true);
+  await sleep(500);
+  $("presentOverlay").dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 10, clientY: 50 })); await sleep(1100);
+  ok("왼쪽 25% 영역 클릭은 이전 쪽으로 간다", T.PRESENT.page === 1, T.PRESENT.page);
+  $("presentOverlay").dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 500, clientY: 50 })); await sleep(1100);
+  ok("그 밖의 영역 클릭은 다음 쪽으로 간다", T.PRESENT.page === 2);
+  ok("쪽 번호 표시(HUD)가 나온다", $("presentHud").textContent.includes("2 / 3"), $("presentHud").textContent);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  ok("Esc로 슬라이드쇼가 닫힌다", !$("presentOverlay").classList.contains("open") && !T.PRESENT.isOpen);
+  ok("닫으면 마지막으로 본 쪽이 화면에서도 보인다", T.STATE.currentPage === 2, T.STATE.currentPage);
+
+  // 효과 미리보기 (화면 위에 겹쳐서 재생)
+  T.STATE.numPages = 3; T.STATE.currentPage = 1;
+  const rectStub = window.HTMLElement.prototype.getBoundingClientRect; window.HTMLElement.prototype.getBoundingClientRect = () => ({ left: 10, top: 10, width: 300, height: 400 });
+  T.PREFS.data.pres.dur = 0.2;
+  const prv = T.PRESENT.previewOnViewer("wipe", "left", 0.2); await sleep(60);
+  ok("효과를 고르면 화면 위에 미리보기 캔버스가 겹쳐 나타난다", $("transPreview") && $("transPreview").style.display === "block");
+  await prv; await sleep(10);
+  ok("미리보기가 끝나면 사라진다", $("transPreview").style.display === "none");
+  window.HTMLElement.prototype.getBoundingClientRect = rectStub;
 
   console.log("\n=== 결과 ===");
   let fail = 0;
