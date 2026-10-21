@@ -47,7 +47,7 @@ const CONTVIEW = {
       const view = { page: p, vp, canvas: annoC, el: div, pdfCanvas: pdfC };
       this.views.push(view);
       ANNOTATE.bindContainer(div, () => view);
-      CAPTURE.bind(capC, pdfC, annoC);
+      CAPTURE.bind(capC, pdfC, annoC, () => view);
 
       const ctx = pdfC.getContext("2d");
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

@@ -52,7 +52,7 @@ function distToSeg(px, py, x1, y1, x2, y2) {
 // 저장용: 원본 PDF 위에 주석을 벡터로 그리고, 쪽 회전·스티커노트(실제 PDF 메모)까지 반영
 async function buildAnnotatedPDF(PL, bytes, byPage, rotations, opts) {
   const { PDFDocument, rgb, degrees, LineCapStyle, PDFName, PDFHexString, PDFArray } = PL;
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const doc = await PDFDocument.load(bytes); // 권한 제한(암호화)된 PDF는 여기서 오류 → 호출하는 쪽이 이미지 방식으로 대신 저장해요
   const col = (hex) => {
     const n = parseInt(String(hex || "#000000").slice(1), 16);
     return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
@@ -628,21 +628,26 @@ const ANNOTATE = {
   },
 
   /* ----- 저장용 바이트 만들기 ----- */
-  async buildBytes() {
+  async buildBytes(opts) {
+    this.lastMode = "vector"; this.lastEmbedded = false;
     try {
       const changed = this.hasAny() || Object.keys(STATE.pageRotations).some((k) => STATE.pageRotations[k]);
-      const embed = changed ? { original: new Uint8Array(STATE.fileBytes), session: { v: 1, byPage: this.byPage, rotations: STATE.pageRotations } } : null;
-      return await buildAnnotatedPDF(PDFLib, STATE.fileBytes, this.byPage, STATE.pageRotations, { embed });
+      const embedOn = typeof PREFS === "undefined" || PREFS.data.embedSession !== false;
+      const embed = changed && embedOn ? { original: new Uint8Array(STATE.fileBytes), session: { v: 1, byPage: this.byPage, rotations: STATE.pageRotations } } : null;
+      const bytes = await buildAnnotatedPDF(PDFLib, STATE.fileBytes, this.byPage, STATE.pageRotations, { embed });
+      this.lastEmbedded = !!embed;
+      return bytes;
     } catch (e) {
       console.warn("벡터 저장 실패, 이미지 방식으로 대신 저장해요:", e);
-      return this.buildBytesRaster();
+      this.lastMode = "raster";
+      return this.buildBytesRaster(opts && opts.pages);
     }
   },
 
   // 예비 방식: 모든 쪽을 이미지로 구워서 저장 (벡터 방식이 안 되는 특이한 PDF용)
-  async buildBytesRaster() {
+  async buildBytesRaster(pages) {
     const outDoc = await PDFLib.PDFDocument.create();
-    for (let i = 1; i <= STATE.numPages; i++) {
+    for (const i of pages || Array.from({ length: STATE.numPages }, (_, k) => k + 1)) {
       const page = await STATE.pdfDoc.getPage(i), rotation = getPageRotation(i);
       const vp = page.getViewport({ scale: 2, rotation });
       const canvas = document.createElement("canvas");
@@ -659,6 +664,12 @@ const ANNOTATE = {
 };
 
 /* ---------- 저장하기 / 다른 이름으로 저장 ---------- */
+let _embedWarned = false;
+function saveHint(raster) {
+  if (raster) return " 암호·권한 제한 때문에 쪽을 이미지로 저장했어요.";
+  if (ANNOTATE.lastEmbedded && !_embedWarned) { _embedWarned = true; return " 이 파일에는 편집을 이어가기 위한 원본이 함께 들어 있어요. 다른 사람에게 보낼 땐 설정에서 끌 수 있어요."; }
+  return "";
+}
 // 반환값: 저장했으면 true, 취소·실패면 false
 async function saveDocument(saveAsNew) {
   if (!STATE.pdfDoc) { showToast("먼저 PDF를 열어주세요."); return false; }
@@ -687,6 +698,12 @@ async function saveDocument(saveAsNew) {
   showLoading("저장하는 중…");
   try {
     const bytes = ANNOTATE.hasChanges() ? await ANNOTATE.buildBytes() : new Uint8Array(STATE.fileBytes);
+    const raster = ANNOTATE.hasChanges() && ANNOTATE.lastMode === "raster";
+    if (raster && target && !saveAsNew) {
+      hideLoading();
+      if (!confirm("이 PDF는 암호나 권한 제한이 걸려 있어서, 글자를 그대로 둔 채 저장할 수 없어요.\n쪽을 이미지로 바꿔서 저장하면 글자 선택·검색이 안 돼요.\n\n원본 파일을 이 내용으로 덮어쓸까요?\n(취소하면 저장하지 않아요. '다른 이름으로 저장'을 쓰면 원본이 그대로 남아요.)")) return false;
+      showLoading("저장하는 중…");
+    }
     if (target) {
       const w = await target.createWritable();
       await w.write(bytes); await w.close();
@@ -695,10 +712,10 @@ async function saveDocument(saveAsNew) {
         $("docTitle").textContent = STATE.fileName + " - HorixOffice";
         if (typeof RECENT !== "undefined") { RECENT.add(STATE.fileName, STATE.numPages); RECENT.saveHandle(STATE.fileName, target); }
       }
-      showToast("저장했어요.");
+      showToast("저장했어요." + saveHint(raster));
     } else {
       downloadBytes(bytes, downloadName, "application/pdf");
-      showToast("저장했어요. (다운로드 폴더를 확인해 보세요)");
+      showToast("저장했어요. (다운로드 폴더를 확인해 보세요)" + saveHint(raster));
     }
     ANNOTATE.dirty = false;
     return true;

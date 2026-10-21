@@ -66,7 +66,7 @@ const dom = new JSDOM(html, {
     window.PDFLib = {
       rgb: () => ({}),
       PDFDocument: {
-        create: () => Promise.resolve({ addPage: () => ({ drawLine() {}, drawCircle() {}, drawRectangle() {} }), save: () => Promise.resolve(new Uint8Array([1, 2, 3])) }),
+        create: () => Promise.resolve({ addPage: () => ({ drawLine() {}, drawCircle() {}, drawRectangle() {}, drawImage() {} }), embedPng: async () => ({ width: 1, height: 1 }), copyPages: async (_, idx) => idx.map(() => ({})), save: () => Promise.resolve(new Uint8Array([1, 2, 3])) }),
         load: () => Promise.resolve({ getPageIndices: () => [0], getPageCount: () => 3 }),
       },
     };
@@ -702,6 +702,99 @@ async function main() {
   await prv; await sleep(10);
   ok("미리보기가 끝나면 사라진다", $("transPreview").style.display === "none");
   window.HTMLElement.prototype.getBoundingClientRect = rectStub;
+
+  // 32) 도구 탭 · 도움말 · 최종 점검에서 고친 것들
+  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  T.STATE.numPages = 3; T.ANNOTATE.setTool("select");
+  let dlName = null; const ce3 = window.document.createElement.bind(window.document);
+  window.document.createElement = (tag) => { const el = ce3(tag); if (tag === "a") { el.click = () => { dlName = el.download; }; } return el; };
+  const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 쪽 추출하기 (창)
+  click(q('.panel[data-panel="tools"] [data-a="extract"]'));
+  ok("쪽 추출하기 창이 열린다", $("extractWin").classList.contains("open"));
+  window.document.querySelector('input[name="exRange"][value="custom"]').checked = true; $("exCustom").value = "1,3";
+  window.document.querySelector('input[name="exMode"][value="each"]').checked = true;
+  click($("extractRun")); await sleep2(80);
+  ok("쪽마다 파일로 추출하면 ZIP으로 내려받는다", dlName && dlName.endsWith("_쪽별.zip"), dlName);
+  window.document.querySelector('input[name="exMode"][value="one"]').checked = true; dlName = null;
+  $("exCustom").value = "9"; click($("extractRun")); await sleep2(30);
+  ok("범위가 올바르지 않으면 내려받지 않고 안내한다", dlName === null && $("toast").textContent.includes("쪽을 골라"));
+  $("exCustom").value = "2"; click($("extractRun")); await sleep2(80);
+  ok("한 파일로 추출하면 '_추출.pdf'로 내려받는다", dlName && dlName.endsWith("_추출.pdf"), dlName);
+
+  // 선택 영역 내보내기: 화면 캡처와 다른 기능이다
+  click(q('.panel[data-panel="tools"] [data-a="exportRegion"]'));
+  ok("선택 영역 내보내기를 누르면 내보내기 모드로 영역 선택이 시작된다", T.CAPTURE.active && T.CAPTURE.mode === "export" && q('.panel[data-panel="tools"] [data-a="exportRegion"]').classList.contains("on") && !q('.panel[data-panel="tools"] [data-a="capture"]').classList.contains("on"));
+  const cc = $("captureCanvas"); const cpe = (t, x, y) => cc.dispatchEvent(new window.MouseEvent(t, { bubbles: true, clientX: x, clientY: y, button: 0 }));
+  cpe("pointerdown", 20, 20); cpe("pointermove", 120, 90); cpe("pointerup", 120, 90); await sleep2(40);
+  ok("영역을 끌면 캡처 결과 대신 '내보내기' 창이 열린다", $("exportWin").classList.contains("open") && !$("captureOverlay").classList.contains("open"));
+  ok("내보내기 창에 영역 미리보기와 글자 안내가 나온다", !!$("exportPreview").src && $("exportTextNote").textContent.includes("글자"), $("exportTextNote").textContent);
+  ok("내보내기가 끝나면 캡처 모드가 꺼진다", !T.CAPTURE.active && T.CAPTURE.mode === "capture");
+  window.document.querySelector('input[name="exFmt"][value="txt"]').checked = true; $("exportText").value = "내보낼 글자"; dlName = null;
+  click($("exportSave")); await sleep2(40);
+  ok("글자(TXT)로 내보내면 .txt를 내려받는다", dlName && dlName.endsWith(".txt"), dlName);
+  window.document.querySelector('input[name="exFmt"][value="png"]').checked = true; dlName = null;
+  click($("exportSave")); await sleep2(60);
+  ok("이미지(PNG)로 내보내면 .png를 내려받는다", dlName && dlName.endsWith(".png"), dlName);
+  // 화면 캡처는 예전처럼 바로 결과가 뜬다
+  click(q('.panel[data-panel="tools"] [data-a="capture"]'));
+  cpe("pointerdown", 20, 20); cpe("pointermove", 120, 90); cpe("pointerup", 120, 90); await sleep2(20);
+  ok("화면 캡처는 그대로 캡처 결과 창을 연다", $("captureOverlay").classList.contains("open"));
+  click(q('#captureOverlay [data-close="captureOverlay"]'));
+
+  // 도움말
+  click(q("#printWin .fhelp"));
+  ok("창의 '?'를 누르면 그 창 전용 도움말과 단축키 표가 뜬다", $("helpWin").classList.contains("open") && $("helpBody").textContent.includes("인쇄용 PDF") && $("helpBody").textContent.includes("Ctrl+Z"));
+  click(q('#helpWin [data-close="helpWin"]')); click(q(".helpBtn"));
+  ok("제목줄 '?' 버튼은 단축키 도움말을 연다", $("helpWin").classList.contains("open") && $("helpBody").textContent.includes("슬라이드쇼 중"));
+  click(q('#helpWin [data-close="helpWin"]'));
+
+  // Ctrl+F: 문서가 있을 땐 찾기 창, 없을 땐 브라우저 기본 동작 유지
+  const kf = () => { const ev = new window.KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }); window.document.dispatchEvent(ev); return ev.defaultPrevented; };
+  window.document.activeElement.blur && window.document.activeElement.blur();
+  ok("문서가 있을 때 Ctrl+F는 찾기 창을 연다", kf() === true && $("findWin").classList.contains("open"));
+  click(q('#findWin [data-close="findWin"]'));
+  const keepDoc = T.STATE.pdfDoc; T.STATE.pdfDoc = null;
+  ok("문서가 없을 땐 Ctrl+F를 가로채지 않는다 (브라우저 찾기 그대로)", kf() === false);
+  T.STATE.pdfDoc = keepDoc;
+
+  // 저장하지 않은 주석이 있을 때 탭 닫기 경고
+  T.ANNOTATE.dirty = false;
+  const bu = () => { const ev = new window.Event("beforeunload", { cancelable: true }); window.dispatchEvent(ev); return ev.defaultPrevented; };
+  ok("저장할 것이 없으면 탭을 닫아도 경고하지 않는다", bu() === false);
+  T.ANNOTATE.addShape({ type: "line", color: "#000000", width: 2, p1: [1, 1], p2: [9, 9] });
+  ok("저장하지 않은 주석이 있으면 탭을 닫을 때 경고한다", bu() === true);
+
+  // 권한 제한(암호화) PDF가 섞인 병합은 막고 이유를 알려준다
+  const origLoad = window.PDFLib.PDFDocument.load;
+  window.PDFLib.PDFDocument.load = (b) => (b.byteLength === 7 ? Promise.reject(new Error("encrypted")) : origLoad(b));
+  T.MERGE.files = []; T.MERGE.selected = -1;
+  await T.MERGE.addFiles([new window.File(["normal1"], "일반.pdf"), new window.File(["locked!"], "잠긴.pdf")]);
+  window.PDFLib.PDFDocument.load = origLoad;
+  ok("암호·권한 제한 파일은 목록에서 경고가 표시된다", $("mergeList").textContent.includes("합칠 수 없어요") && T.MERGE.files[1].blocked === true);
+  click($("mergeWin").classList.contains("open") ? $("mergeExecute") : (T.MERGE.open(), $("mergeExecute")));
+  await sleep2(20);
+  ok("그 파일이 있으면 병합을 막고 파일 이름을 알려준다", $("toast").textContent.includes("잠긴.pdf") && !dlName2());
+  function dlName2() { return false; }
+  T.MERGE.files = []; closeModalSafe("mergeWin");
+  function closeModalSafe(id) { $(id).classList.remove("open"); }
+
+  // 저장: 이미지 방식으로 바뀌는 PDF는 원본을 덮어쓰기 전에 확인한다
+  T.ANNOTATE.buildBytes = async () => { T.ANNOTATE.lastMode = "raster"; return new Uint8Array([7]); };
+  let wrote = false; T.STATE.fileHandle = { name: "a.pdf", queryPermission: async () => "granted", requestPermission: async () => "granted", createWritable: async () => ({ write: async () => { wrote = true; }, close: async () => {} }) };
+  window.confirm = () => false;
+  ok("덮어쓰기를 거절하면 저장하지 않는다 (원본 보호)", (await window.saveDocument(false)) === false && wrote === false);
+  window.confirm = () => true;
+  ok("덮어쓰기를 허락하면 저장한다", (await window.saveDocument(false)) === true && wrote === true);
+  T.STATE.fileHandle = null;
+
+  // 설정: 편집 이어가기용 원본 포함 여부 (기본 켜짐)
+  T.ACT.settings();
+  ok("사용자 설정에 '편집 이어가기용 원본 넣기'가 기본으로 켜져 있다", $("pref_embed").checked === true);
+  $("pref_embed").checked = false; click($("prefSave"));
+  ok("끄고 저장하면 설정에 반영된다", T.PREFS.data.embedSession === false);
+  T.PREFS.data.embedSession = true;
 
   console.log("\n=== 결과 ===");
   let fail = 0;

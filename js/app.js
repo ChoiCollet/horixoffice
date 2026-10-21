@@ -33,20 +33,6 @@ const ACT = {
   close: () => location.reload(),
   fullscreen: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(),
   convert: () => showToast("HWP·DOCX·PPTX·XLSX·그림 변환은 서버가 필요해 아직 지원하지 않아요."),
-  soon: () => showToast("아직 준비 중인 기능이에요."),
-  extract: async () => {
-    const txt = prompt("추출할 쪽 번호 (예: 1,3,5-7)");
-    if (!txt) return;
-    const pages = parsePageRange(txt, STATE.numPages);
-    if (!pages.length) return showToast("올바른 쪽 번호가 아니에요.");
-    showLoading("쪽을 추출하는 중…");
-    try {
-      const src = await PDFLib.PDFDocument.load(STATE.fileBytes);
-      const out = await PDFLib.PDFDocument.create();
-      (await out.copyPages(src, pages.map((p) => p - 1))).forEach((p) => out.addPage(p));
-      downloadBytes(await out.save(), replaceExt(STATE.fileName, "_추출.pdf"), "application/pdf");
-    } catch (e) { showToast("쪽 추출 중 문제가 발생했어요."); } finally { hideLoading(); }
-  },
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -63,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     PREFS.data.fit = $("pref_fit").value;
     PREFS.data.thumbs = $("pref_thumbs").checked;
     PREFS.data.annoWidth = Number($("pref_annowidth").value);
+    PREFS.data.embedSession = $("pref_embed").checked;
     const sel = document.querySelector("#pref_annocolor_row .rcolor.selected");
     if (sel) PREFS.data.annoColor = sel.dataset.color;
     PREFS.save();

@@ -74,14 +74,14 @@ async function loadPDFFromFile(file) {
     STATE.fileModified = file.lastModified;
     $("docTitle").textContent = STATE.fileName + " - HorixOffice";
 
-    let doc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    let doc = await openPdfDocument(pdfjsLib, buf.slice(0), askPdfPassword);
     // 이전에 HorixOffice에서 저장한 파일이면 원본과 주석을 꺼내서 계속 편집할 수 있게 해요
     const found = typeof detectHorixSession === "function" ? await detectHorixSession(doc) : null;
     if (found) {
       const o = found.original;
       buf = o.buffer.slice(o.byteOffset, o.byteOffset + o.byteLength);
       STATE.fileBytes = buf;
-      doc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      doc = await openPdfDocument(pdfjsLib, buf.slice(0), askPdfPassword);
     }
 
     STATE.pdfDoc = doc;
@@ -113,8 +113,8 @@ async function loadPDFFromFile(file) {
     RECENT.add(STATE.fileName, STATE.numPages);
     $("statusText").textContent = `${STATE.fileName} 열림`;
   } catch (err) {
-    console.error(err);
-    showToast("PDF를 여는 중 문제가 발생했어요. 파일이 손상되지 않았는지 확인해 주세요.");
+    if (err && err.cancelled) showToast("열기를 취소했어요.");
+    else { console.error(err); showToast("PDF를 여는 중 문제가 발생했어요. 파일이 손상되지 않았는지 확인해 주세요."); }
   } finally {
     hideLoading();
   }

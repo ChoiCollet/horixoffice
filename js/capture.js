@@ -5,6 +5,7 @@
 
 const CAPTURE = {
   active: false,
+  mode: "capture", // 'capture'(바로 이미지) | 'export'(내보내기 창)
   rect: null,
 
   sizeCanvas(c, w, h) {
@@ -18,12 +19,14 @@ const CAPTURE = {
   toggle() {
     this.active = !this.active;
     $("viewer").classList.toggle("capturing", this.active);
-    document.querySelectorAll('[data-a="capture"]').forEach((b) => b.classList.toggle("on", this.active));
-    if (this.active) showToast("캡처할 영역을 드래그하세요.");
+    const key = this.mode === "export" ? "exportRegion" : "capture";
+    document.querySelectorAll(`[data-a="${key}"]`).forEach((b) => b.classList.toggle("on", this.active));
+    if (!this.active) { document.querySelectorAll('[data-a="capture"],[data-a="exportRegion"]').forEach((b) => b.classList.remove("on")); this.mode = "capture"; }
+    else if (this.mode === "capture") showToast("캡처할 영역을 드래그하세요.");
   },
 
   // 캡처 층(c)에 드래그 동작을 연결 — 아래에 있는 pdf 캔버스와 주석 캔버스를 잘라서 이미지로 만들어요
-  bind(c, pdfC, annoC) {
+  bind(c, pdfC, annoC, getView) {
     let start = null, dragging = false, rect = null;
     const pos = (e) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     c.addEventListener("pointerdown", (e) => {
@@ -46,8 +49,11 @@ const CAPTURE = {
       if (!dragging) return;
       dragging = false;
       c.getContext("2d").clearRect(0, 0, c.width, c.height);
-      if (rect && rect.w > 4 && rect.h > 4) this.finish(rect, pdfC, annoC);
+      const mode = this.mode, view = getView ? getView() : null;
       this.toggle();
+      if (rect && rect.w > 4 && rect.h > 4) {
+        if (mode === "export" && view) REGION.open(rect, pdfC, annoC, view); else this.finish(rect, pdfC, annoC);
+      }
     });
   },
 
@@ -65,5 +71,5 @@ const CAPTURE = {
     openModal("captureOverlay");
   },
 
-  initPointerEvents() { this.bind($("captureCanvas"), $("pdfCanvas"), $("annoCanvas")); },
+  initPointerEvents() { this.bind($("captureCanvas"), $("pdfCanvas"), $("annoCanvas"), () => ({ page: STATE.currentPage, vp: STATE.pageViewport })); },
 };

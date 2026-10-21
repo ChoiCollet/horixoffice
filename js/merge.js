@@ -18,9 +18,14 @@ const MERGE = {
     try {
       for (const f of Array.from(fileList)) {
         const buffer = await f.arrayBuffer();
-        let pageCount = 0;
-        try { pageCount = (await PDFLib.PDFDocument.load(buffer)).getPageCount(); } catch (e) { /* 손상된 파일은 0쪽으로 표시 */ }
-        this.files.push({ name: f.name, buffer, pageCount, sizeBytes: f.size, range: "all", customRange: "" });
+        let pageCount = 0, blocked = false;
+        try { pageCount = (await PDFLib.PDFDocument.load(buffer)).getPageCount(); }
+        catch (e) {
+          // 암호·권한 제한이 걸렸거나 손상된 파일: 쪽 수만 pdf.js로 확인하고 합치기에서는 빼요
+          blocked = true;
+          try { pageCount = (await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise).numPages; } catch (e2) { pageCount = 0; }
+        }
+        this.files.push({ name: f.name, buffer, pageCount, sizeBytes: f.size, range: "all", customRange: "", blocked });
       }
     } finally { hideLoading(); }
     this.render();
@@ -61,7 +66,7 @@ const MERGE = {
           <div class="micon">PDF</div>
           <div class="mmeta">
             <div class="mname">${i + 1}. ${escapeHtml(f.name)}</div>
-            <div class="mrange">${this.rangeLabel(f)}</div>
+            <div class="mrange">${this.rangeLabel(f)}</div>${f.blocked ? '<div class="mwarn">⚠ 암호·권한 제한이 있어 합칠 수 없어요</div>' : ""}
           </div>
           <div class="msize">${f.pageCount}쪽, ${(f.sizeBytes / 1048576).toFixed(2)} MB</div>
         </li>`).join("");
@@ -129,6 +134,8 @@ const MERGE = {
 
   async execute() {
     if (this.files.length < 2) { showToast("합칠 PDF를 2개 이상 추가해 주세요."); return; }
+    const bad = this.files.filter((f) => f.blocked);
+    if (bad.length) { showToast(`합칠 수 없는 파일이 있어요: ${bad.map((f) => f.name).join(", ")} (암호·권한 제한 또는 손상). 목록에서 빼 주세요.`); return; }
     showLoading("PDF를 합치는 중…");
     try {
       const outDoc = await PDFLib.PDFDocument.create();

@@ -5,7 +5,7 @@ const NEED = 1, DIS = 2;
 const PREFS_KEY = "horix_prefs_v1";
 const PREFS = {
   data: Object.assign(
-    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light", rtEnable: false, rtEngine: "naver", pres: { type: "none", from: "left", dur: 1, monitor: "default" }, ui: { ribbon: true, quick: true, status: true } },
+    { fit: "custom", thumbs: true, annoColor: "#e2231a", annoWidth: 4, skin: "#e2231a", skinMode: "light", rtEnable: false, rtEngine: "naver", pres: { type: "none", from: "left", dur: 1, monitor: "default" }, embedSession: true, pres: { type: "none", from: "left", dur: 1, monitor: "default" }, ui: { ribbon: true, quick: true, status: true } },
     (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; } })()
   ),
   save() { localStorage.setItem(PREFS_KEY, JSON.stringify(this.data)); },
@@ -85,6 +85,7 @@ Object.assign(ACT, {
     $("pref_fit").value = PREFS.data.fit;
     $("pref_thumbs").checked = PREFS.data.thumbs;
     $("pref_annowidth").value = PREFS.data.annoWidth;
+    $("pref_embed").checked = PREFS.data.embedSession !== false;
     document.querySelectorAll("#pref_annocolor_row .rcolor").forEach((b) =>
       b.classList.toggle("selected", b.dataset.color === PREFS.data.annoColor));
     openModal("settingsWin"); centerWin($("settingsWin"));
@@ -325,7 +326,7 @@ const MENUS = {
     ["화면 전환(B)", ">", TRANS_TYPES.map((t) => [t.name, "", "tr_" + t.id, 0, () => presSettings().type === t.id])],
     ["효과 설정(C)…", "", "effectSettings"]],
   tools: [["선택(S)", "Shift+Q", "select", 0, () => ANNOTATE.tool === "select"], ["손도구(H)", "Shift+W", "hand", NEED, () => ANNOTATE.tool === "hand"],
-    ["화면 캡처(A)", "Ctrl+Shift+C", "capture", NEED], ["선택 영역 내보내기(E)", "Shift+A", "capture", NEED], "-",
+    ["화면 캡처(A)", "Ctrl+Shift+C", "capture", NEED], ["선택 영역 내보내기(E)", "Shift+A", "exportRegion", NEED], "-",
     ["한컴 사전(D)…", "F12", "dict"], "-", ["실시간 검색 설정(B)…", "", "rtSettings"], "-",
     ["쪽 추출하기(C)…", "", "extract", NEED], ["PDF 병합(M)…", "", "merge"], "-", ...CONV],
 };
@@ -359,7 +360,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }));
 
   // 도움말(?) 자리표시자
-  document.querySelectorAll(".fhelp").forEach((h) => h.addEventListener("click", () => showToast("도움말은 준비 중이에요.")));
+  document.querySelectorAll(".fhelp").forEach((h) => h.addEventListener("click", () => showHelp(h.closest(".fwin").id)));
 
   // 주석 기본 색상 / 스킨 강조 색상 스와치 — 위임 방식(나중에 추가되는 사용자 정의 색도 동작하도록)
   document.addEventListener("click", (e) => {
@@ -512,7 +513,7 @@ document.querySelectorAll(".fwin").forEach((w) => {
 
 /* ---- 단축키 ---- */
 const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "saveAs", "f5": "presentStart", "shift+f5": "present",
-  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "capture", "alt+x": "quit", "ctrl+f4": "closeDoc", "ctrl+a": "selectAll", "shift+w": "hand", "f12": "dict" };
+  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "exportRegion", "alt+x": "quit", "ctrl+f4": "closeDoc", "ctrl+a": "selectAll", "shift+w": "hand", "f12": "dict", "ctrl+f": "find" };
 let chord = 0;
 document.addEventListener("keydown", (e) => {
   if ($("presentOverlay").classList.contains("open")) return;
@@ -523,7 +524,11 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && key === "q") { chord = Date.now(); e.preventDefault(); return; }
   const k = (e.ctrlKey ? "ctrl+" : "") + (e.altKey ? "alt+" : "") + (e.shiftKey ? "shift+" : "") + key;
   if ((k === "ctrl+a") && typing) return; // 입력창 안에서는 원래 동작 유지
-  if (SC[k]) { e.preventDefault(); if (STATE.pdfDoc || SC[k] === "open" || SC[k] === "quit") ACT[SC[k]](); return; }
+  if (SC[k]) {
+    // 문서가 없을 땐 브라우저 기본 동작(Ctrl+F 찾기 등)을 그대로 두어요
+    if (STATE.pdfDoc || SC[k] === "open" || SC[k] === "quit") { e.preventDefault(); ACT[SC[k]](); }
+    return;
+  }
   if (!mod && STATE.pdfDoc && key === "arrowleft") ACT.prev();
   if (!mod && STATE.pdfDoc && key === "arrowright") ACT.next();
 });
@@ -614,6 +619,137 @@ document.addEventListener("DOMContentLoaded", () => {
   }, true);
   // 모바일 위쪽 ⋯ 메뉴 닫기
   document.addEventListener("click", (e) => { if (!e.target.closest("#siteMenu,#moreBtn")) $("siteMenu").hidden = true; });
+});
+
+
+/* =========================================================
+   프레젠테이션 파트: 전환 효과 고르기 · 효과 설정 · 모니터 · 미리보기
+   ========================================================= */
+function savePres(patch) {
+  PREFS.data.pres = Object.assign(presSettings(), patch); PREFS.save(); syncPresUi();
+}
+function syncPresUi() {
+  const s = presSettings();
+  document.querySelectorAll(".tr").forEach((b) => b.classList.toggle("on", b.dataset.tr === s.type));
+  $("presDur").value = Number(s.dur).toFixed(1);
+  if ([...$("presMonitor").options].some((o) => o.value === String(s.monitor))) $("presMonitor").value = String(s.monitor);
+}
+function fillMonitors() {
+  ["presMonitor", "effMonitor"].forEach((id) => {
+    const sel = $(id), cur = presSettings().monitor;
+    sel.innerHTML = '<option value="default">기본 모니터</option>' +
+      PRESENT.screens.map((sc, i) => `<option value="${i}">${escapeHtml(sc.label || "모니터 " + (i + 1))}${sc.isPrimary ? " (주 모니터)" : ""}</option>`).join("");
+    if ([...sel.options].some((o) => o.value === String(cur))) sel.value = String(cur);
+  });
+}
+PRESENT.loadScreens = async function () {
+  if (!window.getScreenDetails) { showToast("이 브라우저는 모니터 선택을 지원하지 않아요. (크롬·엣지에서 가능해요)"); return false; }
+  try { const d = await window.getScreenDetails(); this.screens = Array.from(d.screens); fillMonitors(); return true; }
+  catch (e) { showToast("모니터 정보를 가져오지 못했어요. 권한을 허용해 주세요."); return false; }
+};
+function effForm() { return { type: $("effType").value, from: $("effFrom").value, dur: Math.max(0, Math.min(10, Number($("effDur").value) || 0)), monitor: $("effMonitor").value }; }
+function effRefreshDirState() { $("effFrom").disabled = !TRANS_TYPES.find((t) => t.id === $("effType").value).dir; }
+function effPlay() {
+  const f = effForm(), c = $("effPreview");
+  if (!STATE.pdfDoc) {
+    const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = "#aab"; x.font = "14px sans-serif"; x.textAlign = "center"; x.fillText("PDF를 열면 여기서 미리 볼 수 있어요", c.width / 2, c.height / 2);
+    return;
+  }
+  PRESENT.previewOn(c, f.type, f.from, f.dur);
+}
+
+Object.assign(ACT, {
+  presentStart: () => PRESENT.open(1),
+  present: () => PRESENT.open(STATE.currentPage),
+  setTransition: (type, withPreview) => {
+    savePres({ type });
+    if (withPreview) { const s = presSettings(); PRESENT.previewOnViewer(type, s.from, s.dur); }
+  },
+  effectSettings: () => {
+    const s = presSettings();
+    $("effType").value = s.type; $("effFrom").value = s.from; $("effDur").value = Number(s.dur).toFixed(1);
+    fillMonitors(); $("effFindMonitors").hidden = !window.getScreenDetails;
+    effRefreshDirState();
+    openModal("effectWin"); centerWin($("effectWin"));
+    setTimeout(effPlay, 120);
+  },
+});
+TRANS_TYPES.forEach((t) => { ACT["tr_" + t.id] = () => ACT.setTransition(t.id, true); });
+
+document.addEventListener("DOMContentLoaded", () => {
+  syncPresUi(); fillMonitors();
+  document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => ACT.setTransition(b.dataset.tr, true)));
+  $("presDur").addEventListener("change", () => savePres({ dur: Math.max(0, Math.min(10, Number($("presDur").value) || 0)) }));
+  $("presMonitor").addEventListener("change", () => savePres({ monitor: $("presMonitor").value }));
+  $("presMonitor").addEventListener("focus", () => { if (window.getScreenDetails && !PRESENT.screens.length) PRESENT.loadScreens(); }, { once: true });
+  let tm = null; const later = () => { clearTimeout(tm); tm = setTimeout(effPlay, 200); };
+  $("effType").addEventListener("change", () => { effRefreshDirState(); later(); });
+  $("effFrom").addEventListener("change", later); $("effDur").addEventListener("input", later);
+  $("effPlay").addEventListener("click", effPlay);
+  $("effFindMonitors").addEventListener("click", () => PRESENT.loadScreens());
+  $("effOk").addEventListener("click", () => { savePres(effForm()); closeModal("effectWin"); showToast("효과 설정을 저장했어요."); });
+});
+
+
+/* =========================================================
+   도구 탭 · 도움말 · 닫기 전 경고
+   ========================================================= */
+const HELP_SHORTCUTS = [
+  ["Ctrl+O", "PDF 불러오기"], ["Ctrl+S", "저장하기 (주석 포함)"], ["Alt+V", "다른 이름으로 저장하기"], ["Ctrl+P", "인쇄"],
+  ["Ctrl+Q 다음 I", "문서 정보"], ["Ctrl+F", "찾기"], ["Ctrl+A / Ctrl+C", "글자 모두 선택 / 복사"],
+  ["Ctrl+Z / Ctrl+Y", "실행 취소 / 다시 실행"], ["Delete", "선택한 주석 삭제"], ["Esc", "그리던 것 취소 → 선택 해제 → 선택 도구로"],
+  ["Shift+Q / Shift+W", "선택 도구 / 손도구"], ["Ctrl+Shift+C", "화면 캡처"], ["Shift+A", "선택 영역 내보내기"], ["F12", "한컴 사전"],
+  ["Ctrl+J", "주석 표시 켜고 끄기"], ["F5 / Shift+F5", "프레젠테이션 처음부터 / 현재 쪽부터"], ["← →", "쪽 이동"],
+  ["슬라이드쇼 중", "← → 스페이스 Home End 로 이동, 휠·스와이프·화면 클릭도 돼요, Esc로 끝내요"],
+  ["Alt+X / Ctrl+F4", "끝 / 문서 닫기 (브라우저가 막는 경우도 있어요)"],
+];
+const HELP_TEXT = {
+  docWin: "열어 둔 PDF의 파일 정보, 요약(제목·지은이 등), 보안(허용된 동작)을 보여줘요. 읽기 전용이에요.",
+  printWin: "범위·매수·용지를 정하면 그대로 인쇄용 PDF를 만들어 내려받아요. 미리 보기 아래 ◀ ▶ 로 다른 쪽을 확인할 수 있어요. 주석과 회전이 같이 반영돼요.",
+  settingsWin: "파일을 열 때의 기본 배율·썸네일 표시·주석 색과 두께, 저장할 때 편집 이어가기용 원본을 넣을지를 정해요. 이 브라우저에만 저장돼요.",
+  skinWin: "화면 색(밝게·연한 회색·어둡게)과 강조 색을 바꿔요. 도구 상자 배경 그림은 이 탭을 닫으면 사라져요.",
+  findWin: "PDF 안의 글자를 찾아 그 쪽으로 이동해요. 글자가 없는 스캔본은 찾을 수 없어요.",
+  rotateWin: "쪽마다 따로 돌릴 수 있어요. '현재 쪽'은 지금 보는 쪽만, '문서 전체'는 모든 쪽을 돌려요. 저장하면 파일에도 반영돼요.",
+  mergeWin: "+ 로 PDF를 추가하고 ↑↓ 로 순서를 바꿔요. 파일을 고른 뒤 '설정…'에서 그 파일의 일부 쪽만 합칠 수도 있어요. 암호·권한 제한이 걸린 PDF는 합칠 수 없어요.",
+  mergeConfigWin: "고른 파일에서 병합에 쓸 쪽을 정해요. 예: 1,3,5-7",
+  effectWin: "프레젠테이션 화면 전환의 종류·방향·시간·모니터를 정해요. 아래 미리 보기로 바로 확인할 수 있어요.",
+  convertWin: "그림(PNG/ZIP)·DOCX·PPTX·XLSX로 바꿔요. DOCX·XLSX는 글자를 읽어서 만들어서 표·서식은 똑같이 재현되지 않아요. HWP는 비공개 형식이라 만들 수 없어요.",
+  extractWin: "고른 쪽만 새 PDF로 내려받아요. 원본은 바뀌지 않아요. 쪽마다 파일로 나누면 ZIP으로 묶어요.",
+  exportWin: "드래그한 영역을 이미지·잘라낸 PDF·글자로 내보내요. 글자는 PDF에 글자 정보가 있을 때만 가져올 수 있어요.",
+  dictWin: "낱말을 입력하거나 문서에서 고른 글자로 사전·번역 사이트를 새 탭에서 열어요. 그때만 그 낱말이 해당 사이트로 전달돼요.",
+  rtWin: "켜 두면 글자를 고를 때 '검색' 버튼이 나타나요. 누를 때만 선택한 글자가 검색 사이트로 전달돼요.",
+  zoomWin: "확대/축소 비율을 고르거나 직접 넣어요. 폭 맞춤·쪽 맞춤도 있어요.",
+};
+function showHelp(winId) {
+  const t = HELP_TEXT[winId];
+  $("helpBody").innerHTML = (t ? `<p>${escapeHtml(t)}</p>` : "") +
+    "<h4>단축키</h4><table>" + HELP_SHORTCUTS.map(([k, d]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(d)}</td></tr>`).join("") + "</table>" +
+    '<h4>알아두면 좋은 것</h4><p>모든 작업은 이 브라우저 안에서만 처리돼요. 파일은 어디로도 올라가지 않아요. 사전·번역·실시간 검색을 쓸 때만 낱말이 해당 사이트로 전달돼요.</p>';
+  openModal("helpWin"); centerWin($("helpWin"));
+}
+
+Object.assign(ACT, {
+  help: () => showHelp(""),
+  extract: () => EXTRACT.open(),
+  exportRegion: () => REGION.start(),
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("extractRun").addEventListener("click", () => EXTRACT.run());
+  $("exportSave").addEventListener("click", () => REGION.save());
+  $("exportCopy").addEventListener("click", () => REGION.copy());
+  $("captureCopy").addEventListener("click", async () => {
+    try {
+      const blob = await (await fetch($("captureResultImg").src)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      showToast("이미지를 복사했어요.");
+    } catch (e) { showToast("복사하지 못했어요. '이미지로 저장'을 써 주세요."); }
+  });
+  // 저장하지 않은 주석이 있는데 탭을 닫으려 할 때 경고
+  window.addEventListener("beforeunload", (e) => {
+    if (STATE.pdfDoc && ANNOTATE.hasChanges()) { e.preventDefault(); e.returnValue = ""; return ""; }
+  });
 });
 
 
