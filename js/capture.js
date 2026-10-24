@@ -8,11 +8,7 @@ const CAPTURE = {
   mode: "capture", // 'capture'(바로 이미지) | 'export'(내보내기 창)
   rect: null,
 
-  sizeCanvas(c, w, h) {
-    const dpr = window.devicePixelRatio || 1;
-    c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr);
-    c.style.width = w + "px"; c.style.height = h + "px";
-  },
+  sizeCanvas(c, w, h) { sizeCanvasTo(c, w, h, canvasDpr(w, h)); },
 
   onPageRendered(w, h) { this.sizeCanvas($("captureCanvas"), w, h); },
 
@@ -36,7 +32,7 @@ const CAPTURE = {
     });
     c.addEventListener("pointermove", (e) => {
       if (!dragging) return;
-      const cur = pos(e), ctx = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+      const cur = pos(e), ctx = c.getContext("2d"), dpr = canvasK(c);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.fillStyle = "rgba(47,111,237,.15)"; ctx.strokeStyle = "#2f6fed"; ctx.lineWidth = 1.5;
@@ -58,7 +54,7 @@ const CAPTURE = {
   },
 
   finish(rect, pdfC, annoC) {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = canvasK(pdfC);
     const merged = document.createElement("canvas");
     merged.width = Math.round(rect.w * dpr); merged.height = Math.round(rect.h * dpr);
     const ctx = merged.getContext("2d"), sx = rect.x * dpr, sy = rect.y * dpr, sw = rect.w * dpr, sh = rect.h * dpr;

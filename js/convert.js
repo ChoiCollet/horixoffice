@@ -155,13 +155,13 @@ const CONVERT = {
     showLoading("변환하는 중…");
     try {
       let out, name, mime;
-      if (fmt === "img") {
-        const files = [];
+      if (fmt === "img" || fmt === "jpg") {
+        const files = [], jpg = fmt === "jpg", ext = jpg ? "jpg" : "png";
         for (let i = 0; i < pages.length; i++) {
           $("loadingText").textContent = `그림으로 바꾸는 중… ${i + 1}/${pages.length}`;
-          files.push({ name: `${base}_${String(pages[i]).padStart(3, "0")}.png`, data: (await this.renderPNG(pages[i], scale)).png });
+          files.push({ name: `${base}_${String(pages[i]).padStart(3, "0")}.${ext}`, data: await renderPageImage(pages[i], scale, jpg ? "image/jpeg" : "image/png", 0.9) });
         }
-        if (files.length === 1) { out = files[0].data; name = files[0].name; mime = "image/png"; }
+        if (files.length === 1) { out = files[0].data; name = files[0].name; mime = jpg ? "image/jpeg" : "image/png"; }
         else { out = ZIP.build(files); name = `${base}_그림.zip`; mime = "application/zip"; }
       } else if (fmt === "docx") {
         const texts = [];

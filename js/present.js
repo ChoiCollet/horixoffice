@@ -211,7 +211,7 @@ const PRESENT = {
   // 화면에 보이는 쪽 위에 겹쳐서 보여주는 미리보기 (갤러리에서 효과를 고를 때)
   async previewOnViewer(type, from, dur) {
     if (!STATE.pdfDoc || type === "none") return;
-    const host = STATE.viewMode === "continuous" ? $("viewer") : $("pageWrap");
+    const host = isMultiView() ? $("viewer") : $("pageWrap");
     const r = host.getBoundingClientRect();
     if (!(r.width > 20 && r.height > 20)) return;
     const dpr = window.devicePixelRatio || 1;

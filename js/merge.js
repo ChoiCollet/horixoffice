@@ -10,6 +10,22 @@ const MERGE = {
 
   open() {
     openModal("mergeWin"); centerWin($("mergeWin"));
+    // 한PDF처럼 지금 열린 문서를 첫 번째로 넣어 둬요 (주석·회전도 반영)
+    // (창을 열 때마다 지금 상태로 새로 넣어요 — 그사이 주석을 더 달았을 수 있으니까요)
+    const had = this.files.findIndex((f) => f.current);
+    if (had >= 0) { this.files.splice(had, 1); if (this.selected === had) this.selected = -1; else if (this.selected > had) this.selected--; }
+    if (STATE.pdfDoc) this.addCurrent(); else this.render();
+  },
+
+  async addCurrent() {
+    let buffer = STATE.fileBytes, blocked = false;
+    try {
+      const edited = ANNOTATE.hasAny() || Object.keys(STATE.pageRotations).some((k) => STATE.pageRotations[k]);
+      if (edited) buffer = (await buildAnnotatedPDF(PDFLib, STATE.fileBytes, ANNOTATE.byPage, STATE.pageRotations, {})).slice().buffer;
+      else await PDFLib.PDFDocument.load(buffer);
+    } catch (e) { blocked = true; }
+    this.files.unshift({ name: STATE.fileName, buffer, pageCount: STATE.numPages, sizeBytes: buffer.byteLength, range: "all", customRange: "", blocked, current: true });
+    if (this.selected >= 0) this.selected++;
     this.render();
   },
 
@@ -23,7 +39,7 @@ const MERGE = {
         catch (e) {
           // 암호·권한 제한이 걸렸거나 손상된 파일: 쪽 수만 pdf.js로 확인하고 합치기에서는 빼요
           blocked = true;
-          try { pageCount = (await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise).numPages; } catch (e2) { pageCount = 0; }
+          try { pageCount = (await pdfjsLib.getDocument(pdfjsParams(buffer.slice(0))).promise).numPages; } catch (e2) { pageCount = 0; }
         }
         this.files.push({ name: f.name, buffer, pageCount, sizeBytes: f.size, range: "all", customRange: "", blocked });
       }
@@ -65,7 +81,7 @@ const MERGE = {
         <li class="${i === this.selected ? "sel" : ""}" data-i="${i}">
           <div class="micon">PDF</div>
           <div class="mmeta">
-            <div class="mname">${i + 1}. ${escapeHtml(f.name)}</div>
+            <div class="mname">${i + 1}. ${escapeHtml(f.name)}${f.current ? '<span class="mcur">지금 연 문서</span>' : ""}</div>
             <div class="mrange">${this.rangeLabel(f)}</div>${f.blocked ? '<div class="mwarn">⚠ 암호·권한 제한이 있어 합칠 수 없어요</div>' : ""}
           </div>
           <div class="msize">${f.pageCount}쪽, ${(f.sizeBytes / 1048576).toFixed(2)} MB</div>
@@ -82,7 +98,7 @@ const MERGE = {
     const f = this.files[this.selected];
     showLoading("미리보기를 불러오는 중…");
     try {
-      if (!f._previewDoc) f._previewDoc = await pdfjsLib.getDocument({ data: f.buffer.slice(0) }).promise;
+      if (!f._previewDoc) f._previewDoc = await pdfjsLib.getDocument(pdfjsParams(f.buffer.slice(0))).promise;
       this.previewDoc = f._previewDoc;
       this.previewPage = 1;
       $("mcSlider").max = f.pageCount || 1;
@@ -149,10 +165,14 @@ const MERGE = {
         pages.forEach((p) => outDoc.addPage(p));
       }
       const bytes = await outDoc.save();
-      downloadBytes(bytes, "병합된 문서.pdf", "application/pdf");
-      showToast("PDF를 합쳐서 다운로드했어요.");
+      const name = (this.files[0].name || "문서").replace(/\.pdf$/i, "") + "_병합.pdf";
+      downloadBytes(bytes, name, "application/pdf");
       closeModal("mergeWin");
       this.files = []; this.selected = -1;
+      if ($("mergeOpenAfter").checked) {
+        hideLoading();
+        withUnsavedCheck(() => loadPDFFromFile(new File([bytes], name, { type: "application/pdf" })).then(() => showToast("합친 문서를 내려받고 열었어요.")));
+      } else showToast("PDF를 합쳐서 내려받았어요.");
     } catch (err) {
       console.error(err);
       showToast("병합 중 문제가 발생했어요. PDF 파일인지 확인해 주세요.");

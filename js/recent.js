@@ -81,9 +81,11 @@ async function idbGetHandle(name) {
 }
 RECENT.saveHandle = (name, handle) => idbPutHandle(name, handle);
 RECENT.openByName = async (name) => {
-  if (!FSA_SUPPORTED) return showToast("이 브라우저는 파일 자동 재열기를 지원하지 않아요. '열기'로 다시 선택해 주세요.");
+  // 다시 열 수 없으면 파일 고르는 창을 바로 띄워 줘요
+  const pick = (msg) => { showToast(msg); $("fileInput").click(); };
+  if (!FSA_SUPPORTED) return pick(`이 브라우저는 최근 파일을 바로 다시 열 수 없어요. '${name}'을(를) 골라 주세요.`);
   const handle = await idbGetHandle(name);
-  if (!handle) return showToast("이 파일은 다시 열 수 있는 정보가 없어요. '열기'로 다시 선택해 주세요.");
+  if (!handle) return pick(`'${name}'을(를) 다시 골라 주세요.`);
   try {
     if ((await handle.queryPermission({ mode: "read" })) !== "granted") {
       if ((await handle.requestPermission({ mode: "read" })) !== "granted")

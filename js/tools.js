@@ -96,7 +96,7 @@ const REGION = {
   async open(rect, pdfC, annoC, view) {
     const a = view.vp.convertToPdfPoint(rect.x, rect.y), b = view.vp.convertToPdfPoint(rect.x + rect.w, rect.y + rect.h);
     const pdfRect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
-    const dpr = window.devicePixelRatio || 1, m = document.createElement("canvas");
+    const dpr = canvasK(pdfC), m = document.createElement("canvas");
     m.width = Math.round(rect.w * dpr); m.height = Math.round(rect.h * dpr);
     const mc = m.getContext("2d"), sx = rect.x * dpr, sy = rect.y * dpr, sw = rect.w * dpr, sh = rect.h * dpr;
     mc.drawImage(pdfC, sx, sy, sw, sh, 0, 0, sw, sh);

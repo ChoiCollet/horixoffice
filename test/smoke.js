@@ -19,7 +19,7 @@ let inline = localScripts
   .join("\n");
 // 테스트 전용 브릿지: let/const 전역은 window의 속성이 아니라 공유 렉시컬 스코프에만
 // 있으므로, Node 쪽에서 상태를 읽고 조작할 수 있게 참조를 한 번 담아둔다.
-inline += `\n<script>window.__t = { STATE, ANNOTATE, ACT, PREFS, RECENT, MERGE, CAPTURE, PRESENT, PRINTMOD, THUMBS, TEXTLAYER, CONVERT, CONTVIEW, showToast };</script>\n`;
+inline += `\n<script>window.__t = { STATE, ANNOTATE, ACT, PREFS, RECENT, MERGE, CAPTURE, PRESENT, PRINTMOD, THUMBS, TEXTLAYER, CONVERT, CONTVIEW, DLG, showToast };</script>\n`;
 html = html.replace(/<script src="js\/[a-zA-Z]+\.js"><\/script>\s*/g, "");
 html = html.replace("</body>", inline + "</body>");
 
@@ -161,8 +161,8 @@ async function main() {
   ok("Ctrl+S 단축키 처리 중 예외가 발생하지 않는다", !threw, threw && threw.stack);
 
   // 9) 다른 이름으로 저장 — 이번엔 문서가 있는 상태에서 실제로 파일 다운로드(가짜 URL 생성)까지 가는지
-  const origPrompt = window.prompt;
-  window.prompt = () => "내가 지정한 이름";
+  const origPrompt = T.DLG.prompt;
+  T.DLG.prompt = async () => "내가 지정한 이름";
   let anchorClicked = false;
   const origCreateElement = window.document.createElement.bind(window.document);
   window.document.createElement = (tag) => {
@@ -172,10 +172,12 @@ async function main() {
   };
   click($("fileBtn"));
   if (saveAsBtn) click(saveAsBtn);
+  await new Promise((r) => setTimeout(r, 30));
   ok("PDF가 열려 있을 때 '다른 이름으로 저장'을 누르면 다운로드가 트리거된다", anchorClicked);
-  window.prompt = origPrompt;
+  T.DLG.prompt = origPrompt;
 
   // 10) 빈 문서 만들기(가로) — 두 번째 항목도 정상 동작하는지
+  T.ANNOTATE.dirty = false;
   const blankBtnL = q('#fileMenu [data-a="newBlankL"]');
   if (blankBtnL) {
     click($("fileBtn"));
@@ -195,11 +197,12 @@ async function main() {
   // 12) 이 브라우저(jsdom)는 File System Access API 미지원 → 최근 파일 클릭 시 안내만 뜨고 에러는 없어야 함
   if (recentBtn) {
     click($("fileBtn"));
+    T.ANNOTATE.dirty = false;
     click(recentBtn);
     await new Promise((r) => setTimeout(r, 10));
     ok(
       "FSA 미지원 환경에서 최근 파일을 클릭하면 재오픈 대신 안내 토스트가 뜬다",
-      $("toast").textContent.includes("불러오기") || $("toast").textContent.includes("다시 선택"),
+      $("toast").textContent.includes("골라 주세요"),
       $("toast").textContent
     );
   }
@@ -293,6 +296,7 @@ async function main() {
   ok("스킨 모드 저장 시 localStorage에도 반영된다", savedSkin.skinMode === "dark", JSON.stringify(savedSkin));
 
   // 21) 홈 파트 준비를 위해 새 문서를 다시 열어둔다 (지금까지의 흐름으로 문서가 닫혀 있을 수 있음)
+  T.ANNOTATE.dirty = false;
   click($("fileBtn"));
   click(q('#fileMenu [data-a="newBlankP"]'));
   await new Promise((r) => setTimeout(r, 30));
@@ -342,7 +346,7 @@ async function main() {
   ok("주석 속성 목록에 삭제(✕) 버튼이 있다", !!q("#workpaneBody .wpDel"));
   click(q("#workpaneBody .wpDel"));
   await new Promise((r) => setTimeout(r, 10));
-  ok("삭제를 누르면 해당 주석이 지워지고 목록도 비어보인다", T.ANNOTATE.byPage[1].length === 0);
+  ok("삭제를 누르면 해당 주석이 지워지고 목록도 비어보인다", T.ANNOTATE.byPage[1].length === 0, JSON.stringify(T.ANNOTATE.byPage) + " cur=" + T.STATE.currentPage);
 
   click(paneCaret);
   click(q('#dd [data-act="paneCloseAll"]'));
@@ -356,7 +360,7 @@ async function main() {
   const f2 = new window.File(["dummy2"], "문서B.pdf", { type: "application/pdf" });
   await T.MERGE.addFiles([f1, f2]);
   await new Promise((r) => setTimeout(r, 10));
-  ok("파일 2개를 추가하면 목록에 2개가 뜬다", $("mergeList").querySelectorAll("li").length === 2);
+  ok("병합 창에는 지금 연 문서가 먼저 들어 있고, 파일 2개를 추가하면 목록에 3개가 뜬다", $("mergeList").querySelectorAll("li").length === 3 && T.MERGE.files[0].current);
   ok("추가된 파일의 기본 범위는 '문서 전체'로 표시된다", $("mergeList").textContent.includes("범위: 문서 전체"));
   ok("선택 전에는 삭제/설정 버튼이 비활성 상태다", $("mergeRemoveBtn").disabled && $("mergeConfigBtn").disabled);
   click($("mergeList").querySelector('li[data-i="0"]'));
@@ -371,7 +375,7 @@ async function main() {
   click($("mergeUpBtn"));
   ok("↑ 버튼을 누르면 순서가 바뀌지 않는다 (이미 첫 번째라 비활성)", $("mergeUpBtn").disabled);
   click($("mergeDownBtn"));
-  ok("↓ 버튼을 누르면 선택한 파일이 뒤로 이동한다", T.MERGE.files[1].name === "문서A.pdf", T.MERGE.files.map((f) => f.name));
+  ok("↓ 버튼을 누르면 선택한 파일이 뒤로 이동한다", T.MERGE.files[1].current && T.MERGE.files[0].name === "문서A.pdf", T.MERGE.files.map((f) => f.name));
 
   // 26) 회전 — 쪽마다 따로 회전되는지 (아키텍처 변경 검증). 깨끗한 상태에서 시작.
   T.STATE.pageRotations = {};
@@ -400,12 +404,14 @@ async function main() {
   const pvCaret = q('.panel[data-panel="view"] .rcaret[data-dd="pageViewMenu"]');
   ok("보기 리본에 '쪽 보기' ∨ 메뉴가 있다", !!pvCaret);
   click(pvCaret);
-  ok("쪽 보기 메뉴에 한 쪽씩/연속 보기가 있고 현재 모드(한 쪽씩)에 ✓가 붙는다",
-    $("dd").innerHTML.includes("연속 보기") && /<em>✓<\/em><span>한 쪽씩 보기/.test($("dd").innerHTML));
+  ok("쪽 보기 메뉴에 한 쪽/연속/두 쪽/두 쪽 연속 보기가 있고 현재 모드(한 쪽)에 ✓가 붙는다",
+    ["연속 보기", "두 쪽 보기", "두 쪽 연속 보기"].every((t) => $("dd").innerHTML.includes(t)) && /<em>✓<\/em><span>한 쪽 보기/.test($("dd").innerHTML));
   click(q('#dd [data-act="viewModeContinuous"]'));
   await new Promise((r) => setTimeout(r, 30));
   ok("연속 보기로 바꾸면 모든 쪽(3개)이 이어서 렌더된다", $("continuousWrap").querySelectorAll(".contPage").length === 3);
   ok("연속 보기에서는 단일 쪽 영역이 숨겨진다", $("pageWrap").style.display === "none");
+  ok("연속 보기는 화면에 들어오기 전엔 쪽을 그리지 않는다 (자리만 잡음)", !$("continuousWrap").querySelector("canvas"));
+  await T.CONTVIEW.renderPage(T.CONTVIEW.views[1], T.CONTVIEW.token); // 화면에 들어온 것처럼
   T.ANNOTATE.setTool("line");
   const cp2 = $("continuousWrap").querySelector('.contPage[data-page="2"]');
   const cptr = (el, type, x, y) => el.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
@@ -419,7 +425,10 @@ async function main() {
   ok("연속 보기에서 쪽 이동 시 현재 쪽 번호가 갱신된다", T.STATE.currentPage === 2);
   click(q('.panel[data-panel="view"] [data-a="viewModeToggle"]'));
   await new Promise((r) => setTimeout(r, 30));
-  ok("쪽 보기 버튼을 다시 누르면 한 쪽씩 보기로 돌아간다", T.STATE.viewMode === "single" && $("pageWrap").style.display === "block");
+  ok("쪽 보기 버튼은 연속 → 두 쪽 보기로 차례로 바꾼다", T.STATE.viewMode === "two" && $("continuousWrap").querySelectorAll(".contPage").length === 2);
+  T.ACT.viewModeSingle();
+  await new Promise((r) => setTimeout(r, 30));
+  ok("한 쪽 보기로 돌아간다", T.STATE.viewMode === "single" && $("pageWrap").style.display === "block");
   T.ANNOTATE.setTool("line");
   ok("한 쪽씩 보기로 돌아와도 주석 도구를 쓸 수 있다", T.ANNOTATE.tool === "line");
   T.ANNOTATE.setTool("select");
@@ -525,10 +534,10 @@ async function main() {
   ok("저장 후에는 '변경됨' 상태가 풀린다", dirtyBefore && !T.ANNOTATE.hasChanges());
   click($("fileBtn")); click(q('#fileMenu [data-a="closeDoc"]'));
   await new Promise((r) => setTimeout(r, 10));
-  ok("저장한 뒤에는 문서를 닫을 때 다시 묻지 않는다", !$("confirmSaveWin").classList.contains("open") && !T.STATE.pdfDoc);
+  ok("저장한 뒤에는 문서를 닫을 때 다시 묻지 않는다", !$("confirmSaveWin").classList.contains("open") && !T.STATE.pdfDoc, [$("confirmSaveWin").classList.contains("open"), !!T.STATE.pdfDoc, T.ANNOTATE.hasChanges()]);
 
   // 30) 글자 선택·복사 / 손도구 / 크기 조절 / 모바일 / 변환 / 서식 / 사전 / 도구 상자
-  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  T.ANNOTATE.dirty = false; click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
   T.ANNOTATE.reset(3); T.STATE.currentPage = 1; await window.renderCurrentPage();
   const fakeItems = { items: [{ str: "안녕하세요", transform: [12, 0, 0, 12, 72, 700], width: 60, height: 12, fontName: "f" }, { str: "HorixOffice", transform: [12, 0, 0, 12, 72, 680], width: 70, height: 12, fontName: "f" }], styles: { f: { fontFamily: "sans-serif" } } };
   const pg = await T.STATE.pdfDoc.getPage(1); const origGTC = pg.getTextContent;
@@ -619,7 +628,7 @@ async function main() {
   ok("그림 변환(현재 쪽만)은 PNG 한 장으로 내려받는다", dl2 && dl2.endsWith(".png"), dl2);
 
   // 서식 문서 / 확대 창
-  click($("fileBtn")); click(q('#fileMenu [data-a="tplLined"]')); await new Promise((r) => setTimeout(r, 30));
+  T.ANNOTATE.dirty = false; click($("fileBtn")); click(q('#fileMenu [data-a="tplLined"]')); await new Promise((r) => setTimeout(r, 30));
   ok("서식 문서(줄 노트)를 고르면 새 문서가 열린다", T.STATE.fileName === "줄 노트.pdf" && !!T.STATE.pdfDoc, T.STATE.fileName);
   T.ACT.zoomTo(); $("zoomPreset").value = "200"; click($("zoomApply")); await new Promise((r) => setTimeout(r, 20));
   ok("확대/축소 창에서 200%를 고르면 배율이 2가 된다", Math.abs(T.STATE.scale - 2) < 1e-9, T.STATE.scale);
@@ -627,7 +636,7 @@ async function main() {
   ok("확대/축소 창에서 '폭 맞춤'을 고르면 맞춤 모드가 된다", T.STATE.fitMode === "width", T.STATE.fitMode);
 
   // 31) 프레젠테이션 파트 — 효과 고르기 / 효과 설정 / 슬라이드쇼 진행
-  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  T.ANNOTATE.dirty = false; click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
   const gal = window.document.querySelectorAll(".panel[data-panel='present'] .tr");
   ok("프레젠테이션 탭에 전환 효과 9가지가 모두 있다 (모두 사용 가능)", gal.length === 9 && [...gal].every((b) => !b.disabled), gal.length);
   ok("효과 이름이 한PDF와 같다", [...gal].map((b) => b.title).join() === "없음,닦아내기,밀어내기,계단 모양,모자이크,빗질하기,실선 무늬,자르기,밝기 변화");
@@ -704,7 +713,7 @@ async function main() {
   window.HTMLElement.prototype.getBoundingClientRect = rectStub;
 
   // 32) 도구 탭 · 도움말 · 최종 점검에서 고친 것들
-  click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
+  T.ANNOTATE.dirty = false; click($("fileBtn")); click(q('#fileMenu [data-a="newBlankP"]')); await new Promise((r) => setTimeout(r, 40));
   T.STATE.numPages = 3; T.ANNOTATE.setTool("select");
   let dlName = null; const ce3 = window.document.createElement.bind(window.document);
   window.document.createElement = (tag) => { const el = ce3(tag); if (tag === "a") { el.click = () => { dlName = el.download; }; } return el; };
@@ -783,9 +792,9 @@ async function main() {
   // 저장: 이미지 방식으로 바뀌는 PDF는 원본을 덮어쓰기 전에 확인한다
   T.ANNOTATE.buildBytes = async () => { T.ANNOTATE.lastMode = "raster"; return new Uint8Array([7]); };
   let wrote = false; T.STATE.fileHandle = { name: "a.pdf", queryPermission: async () => "granted", requestPermission: async () => "granted", createWritable: async () => ({ write: async () => { wrote = true; }, close: async () => {} }) };
-  window.confirm = () => false;
+  T.DLG.confirm = async () => false;
   ok("덮어쓰기를 거절하면 저장하지 않는다 (원본 보호)", (await window.saveDocument(false)) === false && wrote === false);
-  window.confirm = () => true;
+  T.DLG.confirm = async () => true;
   ok("덮어쓰기를 허락하면 저장한다", (await window.saveDocument(false)) === true && wrote === true);
   T.STATE.fileHandle = null;
 

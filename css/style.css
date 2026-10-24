@@ -693,7 +693,8 @@ body.hide-ribbon #ribbon,body.hide-quick #quick,body.hide-status #statusbar{disp
   #statusbar .qb{min-width:34px;height:32px;font-size:16px}
   #pageInput{width:38px;height:28px;margin:0 3px;font-size:13px}
   #zoomText{min-width:46px;text-align:center;font-size:12px}
-  .fwin{width:calc(100vw - 12px)!important;left:6px!important;max-height:calc(100dvh - 16px);overflow:auto}
+  .fwin{max-width:calc(100vw - 12px);max-height:calc(100dvh - 12px);overflow:auto;overscroll-behavior:contain}
+  .fhead{padding:12px 10px;position:sticky;top:0;z-index:2}
   .fbody2{flex-direction:column;padding:12px;gap:10px}
   .fmain{max-height:none;overflow:visible}
   .factions{flex-direction:row;padding-top:0}
@@ -751,3 +752,102 @@ body.hide-ribbon #ribbon,body.hide-quick #quick,body.hide-status #statusbar{disp
 .helpBody td:first-child{white-space:nowrap;font-weight:600;color:#333;width:42%}
 .mergeList .mwarn{font-size:11px;color:#c0261f}
 @media (max-width:720px){.helpBtn{display:none}}
+
+/* ===== 떠 있는 창 끌기 (모바일에서도 부드럽게) ===== */
+.fhead{touch-action:none;-webkit-user-select:none;user-select:none}
+.fwin.dragging{will-change:transform;transition:none}
+.fwin.dragging,.fwin.dragging *{-webkit-user-select:none;user-select:none}
+.fwin{max-width:calc(100vw - 12px)}
+
+/* ===== 두 쪽 보기 / 두 쪽 연속 보기 ===== */
+#continuousWrap.spread.show{display:grid;grid-template-columns:auto auto;justify-content:center;align-items:start;column-gap:12px;row-gap:28px}
+#continuousWrap.spread .contPage:nth-child(odd){justify-self:end}
+#continuousWrap.spread .contPage:nth-child(even){justify-self:start}
+#continuousWrap{gap:28px}
+.contPage .contNum{pointer-events:none}
+.contPage:not(:has(canvas))::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(-45deg,#fafbfc 0 12px,#f3f4f6 12px 24px)}
+/* 확대해서 쪽이 화면보다 넓어지면, 가운데 정렬 때문에 왼쪽이 잘려서 스크롤로도 못 보던 문제 수정 */
+#viewer{justify-content:flex-start}
+#pageWrap{margin:0 auto;flex:none}
+#continuousWrap{width:max-content;min-width:100%;margin:0 auto;flex:none}
+#empty{margin:auto}
+
+/* ===== 찾기 표시 ===== */
+.findL{position:absolute;inset:0;pointer-events:none;z-index:3}
+.findHit{position:absolute;background:rgba(255,210,0,.38);border-radius:2px;mix-blend-mode:multiply}
+.findHit.cur{background:rgba(255,120,0,.5);outline:2px solid rgba(230,90,0,.85)}
+.dlgMsg{white-space:pre-wrap;line-height:1.6;margin-bottom:12px;font-size:13px}
+#dlgInput{width:100%;padding:8px 10px;border:1px solid var(--ribbon-border);border-radius:5px;font-size:14px}
+
+/* ===== 끌어다 놓기 ===== */
+body.dropping #content{position:relative}
+body.dropping #content::after{content:"여기에 PDF를 놓으면 열려요";position:absolute;inset:10px;border:3px dashed var(--brand);border-radius:12px;background:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--brand);font-weight:700;z-index:30;pointer-events:none}
+.mtb.arrow{width:34px;height:34px;font-size:16px;color:#2f6fed}
+.mergeOpenOpt{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);margin-top:8px}
+.mergeList li .mcur{font-size:10px;color:#2f6fed;margin-left:6px;border:1px solid #b7cdff;border-radius:8px;padding:0 6px}
+
+/* ===== 인쇄 ===== */
+button.prn{background:#fff;cursor:pointer;font:inherit;font-size:11px}
+button.prn:hover{border-color:#9db8f2}
+.printFrame{position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none}
+#printArea{display:none}
+@media print{
+  body > *:not(#printArea){display:none!important}
+  html,body{height:auto!important;overflow:visible!important;background:#fff!important}
+  #printArea{display:block}
+  .printSheet{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;break-after:page;page-break-after:always}
+  .printSheet:last-child{break-after:auto;page-break-after:auto}
+  .printSheet.land{page:land}
+  .printSheet img{max-width:100%;max-height:100%;object-fit:contain}
+  .printSheet img.actual{max-width:none;max-height:none;height:auto}
+}
+#empty{color:#6b7280}
+html[data-skin-mode="dark"] #empty{color:#aab0ba}
+@media (max-width:720px){
+  .fwin .factions{position:sticky;bottom:0;background:#fff;padding:8px 0 2px;z-index:2;box-shadow:0 -8px 8px -8px rgba(0,0,0,.18)}
+  html[data-skin-mode="dark"] .fwin .factions{background:#2a2c31}
+  .fopacity{width:48px}
+}
+
+/* ===== 고른 주석 도구 막대 ===== */
+#selBar{position:fixed;z-index:45;display:flex;gap:2px;background:#2b2f36;border-radius:8px;padding:3px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+#selBar button{border:0;background:none;color:#fff;font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+#selBar button:hover{background:rgba(255,255,255,.14)}
+@media (pointer:coarse){#selBar button{padding:9px 12px;font-size:13px}}
+#ribbon{background-size:cover;background-position:center}
+button,a,input,select,label,.mi,.tab,.tabv{touch-action:manipulation}
+html[data-skin-mode="dark"] .btn:not(.primary),html[data-skin-mode="dark"] .mtb,html[data-skin-mode="dark"] button.prn{background:#33363c;color:#e7e8ea;border-color:#4a4e56}
+html[data-skin-mode="dark"] .btn:not(.primary):hover{background:#3d4048}
+html[data-skin-mode="dark"] .field input,html[data-skin-mode="dark"] .field select,html[data-skin-mode="dark"] .field textarea,html[data-skin-mode="dark"] #findText,html[data-skin-mode="dark"] #dlgInput,html[data-skin-mode="dark"] #pageInput,html[data-skin-mode="dark"] .presFields select,html[data-skin-mode="dark"] .presFields input{background:#1f2124;color:#e7e8ea;border-color:#4a4e56}
+html[data-skin-mode="dark"] .mergeList,html[data-skin-mode="dark"] .mcPreviewBox,html[data-skin-mode="dark"] #previewPaper{background:#1f2124;border-color:#4a4e56}
+html[data-skin-mode="dark"] .mergeList li:hover{background:#2c2f35}html[data-skin-mode="dark"] .mergeList li.sel{background:#2a3550}
+html[data-skin-mode="dark"] #siteMenu,html[data-skin-mode="dark"] .modal{background:#2a2c31;color:#e7e8ea;border-color:#3c3f46}
+html[data-skin-mode="dark"] #siteMenu a,html[data-skin-mode="dark"] .siteItem{color:#e7e8ea}
+html[data-skin-mode="dark"] .helpBody td:first-child{color:#e7e8ea}html[data-skin-mode="dark"] .helpBody td{border-color:#3c3f46}
+.rbsplit .rb[data-c]{width:80px}
+
+/* ===== 첫 화면(문서를 열기 전) 안내 ===== */
+#viewer:has(#empty:not([style*="none"])){align-items:flex-start}
+#empty{margin:0 auto;width:100%;max-width:1060px;text-align:left;color:#374151}
+.welcome{padding:10px 6px 30px}
+.wHero{text-align:center;padding:26px 10px 22px}
+.wHero h1{font-size:24px;margin:0 0 10px;color:#1f2937}
+.wHero p{margin:0 auto 18px;max-width:620px;line-height:1.7;color:#4b5563;font-size:14px}
+.wOpen{font-size:15px;padding:11px 30px}
+.wDrop{margin-top:12px;font-size:12px;color:#6b7280}
+.wGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.wCard{background:#fff;border:1px solid var(--ribbon-border);border-radius:10px;padding:16px 18px;font-size:13px;line-height:1.7}
+.wCard h2{font-size:15px;margin:0 0 8px;color:#111827}
+.wCard ul,.wCard ol{margin:0;padding-left:18px}
+.wCard li{margin:3px 0}
+.wCard details{border-top:1px solid #eef0f3;padding:7px 0}
+.wCard details:first-of-type{border-top:0}
+.wCard summary{cursor:pointer;font-weight:600}
+.wCard details p{margin:6px 0 0;color:#4b5563}
+.wFoot{text-align:center;font-size:12px;margin-top:18px;color:#9ca3af}
+.wFoot a{color:#6b7280}
+html[data-skin-mode="dark"] .wCard{background:#25272c;border-color:#3c3f46}
+html[data-skin-mode="dark"] .wHero h1,html[data-skin-mode="dark"] .wCard h2{color:#f3f4f6}
+html[data-skin-mode="dark"] #empty,html[data-skin-mode="dark"] .wHero p,html[data-skin-mode="dark"] .wCard details p{color:#c9ccd2}
+@media (max-width:900px){.wGrid{grid-template-columns:1fr}}
+@media (max-width:720px){.wHero{padding:16px 4px 14px}.wHero h1{font-size:19px}.wDrop{display:none}.welcome{padding:4px 2px 20px}}

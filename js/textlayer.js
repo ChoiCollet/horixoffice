@@ -50,7 +50,7 @@ const TEXTLAYER = {
   },
 
   currentLayer() {
-    if (STATE.viewMode === "continuous") {
+    if (isMultiView()) {
       const el = document.querySelector(`.contPage[data-page="${STATE.currentPage}"] .textL`);
       return el || null;
     }

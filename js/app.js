@@ -1,6 +1,8 @@
 /* app.js — 리본/메뉴/상태바 이벤트 연결 (data-a 속성 기반) */
 const ACT = {
-  open: async () => {
+  // 저장 안 한 주석이 있으면 먼저 저장할지 물어보고 열어요
+  open: () => withUnsavedCheck(ACT._openPicker),
+  _openPicker: async () => {
     if (typeof FSA_SUPPORTED !== "undefined" && FSA_SUPPORTED) {
       try {
         const [handle] = await window.showOpenFilePicker({
@@ -23,13 +25,14 @@ const ACT = {
   fitPage: () => setFitMode("page"), fitWidth: () => setFitMode("width"), rotate: rotatePage,
   merge: () => MERGE.open(), capture: () => CAPTURE.toggle(),
   select: () => ANNOTATE.setTool("select"),
-  undo: () => ANNOTATE.undo(), redo: () => ANNOTATE.redo(), clearPage: () => ANNOTATE.clearPage(), clearAll: () => { if (confirm("모든 쪽의 주석을 지울까요?")) ANNOTATE.clearAll(); }, export: () => saveDocument(true),
+  undo: () => ANNOTATE.undo(), redo: () => ANNOTATE.redo(), clearPage: () => ANNOTATE.clearPage(), clearAll: async () => { if (!ANNOTATE.hasAny()) return showToast("지울 주석이 없어요."); if (await DLG.confirm("모든 쪽의 주석을 지울까요? (실행 취소로 되돌릴 수 있어요)", { ok: "모두 지우기" })) ANNOTATE.clearAll(); }, export: () => saveDocument(true),
   annoToggle: () => {
     ANNOTATE.setVisible(!ANNOTATE.visible);
   },
   pane: () => { const p = $("rightPanel"); p.hidden = !p.hidden; refreshView(); },
-  first: () => goToPage(1), prev: () => goToPage(STATE.currentPage - 1),
-  next: () => goToPage(STATE.currentPage + 1), last: () => goToPage(STATE.numPages),
+  // 두 쪽 보기에서는 두 쪽씩 넘겨요
+  first: () => goToPage(1), prev: () => goToPage(STATE.currentPage - (STATE.viewMode === "two" ? 2 : 1)),
+  next: () => goToPage(STATE.currentPage + (STATE.viewMode === "two" ? 2 : 1)), last: () => goToPage(STATE.numPages),
   close: () => location.reload(),
   fullscreen: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(),
   convert: () => showToast("HWP·DOCX·PPTX·XLSX·그림 변환은 서버가 필요해 아직 지원하지 않아요."),
@@ -75,7 +78,28 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.addEventListener("click", (e) => { if (!e.target.closest("#fileWrap")) closeFileMenu(); });
 
-  $("emptyOpenBtn").addEventListener("click", ACT.open);
+  $("emptyOpenBtn").addEventListener("click", () => ACT.open());
+  // 리본이 화면보다 길면 마우스 휠로도 옆으로 밀어 볼 수 있게
+  document.querySelectorAll("#ribbon .panel, #quick, #tabScroller").forEach((el) => el.addEventListener("wheel", (e) => {
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+    e.preventDefault(); el.scrollLeft += e.deltaY;
+  }, { passive: false }));
+
+  // 파일을 끌어다 놓아서 열기 (여러 개를 놓으면 PDF 병합 창에 넣어요)
+  let dragDepth = 0;
+  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+  document.addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; document.body.classList.add("dropping"); });
+  document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+  document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dropping"); } });
+  document.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); dragDepth = 0; document.body.classList.remove("dropping");
+    const pdfs = Array.from(e.dataTransfer.files).filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+    if (!pdfs.length) return showToast("PDF 파일만 열 수 있어요.");
+    if (e.target.closest && e.target.closest("#mergeWin")) return MERGE.addFiles(pdfs);
+    if (pdfs.length > 1) { MERGE.open(); MERGE.addFiles(pdfs); return; }
+    withUnsavedCheck(() => loadPDFFromFile(pdfs[0]));
+  });
   $("fileInput").addEventListener("change", (e) => { if (e.target.files[0]) loadPDFFromFile(e.target.files[0]); e.target.value = ""; });
   $("pageInput").addEventListener("change", (e) => goToPage(parseInt(e.target.value, 10) || 1));
   $("zoomSlider").addEventListener("input", (e) => { STATE.fitMode = "custom"; STATE.scale = e.target.value / 100; refreshView(); });
@@ -85,6 +109,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("printWin").addEventListener("input", () => PRINTMOD.updatePreview());
   $("printWin").addEventListener("change", () => PRINTMOD.updatePreview());
   $("executePrint").addEventListener("click", () => PRINTMOD.execute());
+  document.querySelectorAll("#printWin .prn[data-target]").forEach((b) => b.addEventListener("click", () => PRINTMOD.setTarget(b.dataset.target)));
+  $("printToFile").addEventListener("change", (e) => PRINTMOD.setTarget(e.target.checked ? "pdf" : "printer"));
   $("previewSlider").addEventListener("input", (e) => PRINTMOD.setPreviewPage(Number(e.target.value)));
   $("prevPreviewPage").addEventListener("click", () => PRINTMOD.setPreviewPage(PRINTMOD.previewPage - 1));
   $("nextPreviewPage").addEventListener("click", () => PRINTMOD.setPreviewPage(PRINTMOD.previewPage + 1));
@@ -100,6 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }));
   $("strokeWidth").addEventListener("change", (e) => ANNOTATE.setWidth(Number(e.target.value)));
   ANNOTATE.initPointerEvents(); CAPTURE.initPointerEvents();
+  $("viewer").addEventListener("scroll", () => { if (ANNOTATE.selected) ANNOTATE.updateSelBar(); }, { passive: true });
 
   // 병합 / 프레젠테이션 / 최근 파일
   $("mergeAddBtn").addEventListener("click", () => $("mergeFileInput").click());
@@ -119,5 +146,16 @@ document.addEventListener("DOMContentLoaded", () => {
   $("presentExit").addEventListener("click", () => PRESENT.close());
   $("clearRecentBtn").addEventListener("click", () => RECENT.clear());
 
-  window.addEventListener("resize", () => { if (STATE.pdfDoc && STATE.fitMode !== "custom") refreshView(); });
+  // 휴대폰은 스크롤할 때 주소창이 숨었다 나타나면서 높이만 바뀌는 resize가 계속 생겨요.
+  // 그때마다 다시 그리면 화면이 튀므로, 폭이 바뀌었을 때(또는 쪽 맞춤에서 높이가 크게 바뀌었을 때)만 다시 그려요.
+  let lastW = innerWidth, lastH = innerHeight, rsTm = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(rsTm);
+    rsTm = setTimeout(() => {
+      const wChanged = Math.abs(innerWidth - lastW) > 2, hChanged = Math.abs(innerHeight - lastH) > 120;
+      if (!wChanged && !(hChanged && STATE.fitMode === "page")) return;
+      lastW = innerWidth; lastH = innerHeight;
+      if (STATE.pdfDoc && (STATE.fitMode !== "custom" || isMultiView())) refreshView();
+    }, 150);
+  });
 });

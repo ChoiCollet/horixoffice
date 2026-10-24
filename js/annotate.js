@@ -139,6 +139,7 @@ const ANNOTATE = {
     for (let i = 1; i <= numPages; i++) this.byPage[i] = [];
     this.ops = []; this.redoStack = []; this.dirty = false;
     this.selected = null; this.cur = null; this.textCache = {};
+    this.updateSelBar();
   },
 
   hasAny() { return Object.values(this.byPage).some((a) => a.length); },
@@ -165,7 +166,9 @@ const ANNOTATE = {
   },
 
   setVisible(v) {
+    const changed = this.visible !== v;
     this.visible = v;
+    if (changed && typeof THUMBS !== "undefined") Object.keys(this.byPage).forEach((p) => { if (this.byPage[p].length) THUMBS.refreshLater(Number(p)); });
     document.querySelectorAll('[data-a="annoToggle"]').forEach((b) => b.classList.toggle("on", v));
     if (!v) this.selected = null;
     this.redraw();
@@ -205,8 +208,15 @@ const ANNOTATE = {
     }
   },
 
+  _opPages(op) {
+    if (op.ops) return [].concat(...op.ops.map((o) => this._opPages(o)));
+    const p = this._opPage(op); return p ? [p] : [];
+  },
+  _thumbs(op) { if (typeof THUMBS !== "undefined") [...new Set(this._opPages(op))].forEach((p) => THUMBS.refreshLater(p)); },
+
   doOp(op) {
     this._apply(op, false);
+    this._thumbs(op);
     this.ops.push(op); this.redoStack = []; this.dirty = true;
     if (this.selected && this._pageOf(this.selected) === null) this.selected = null;
     $("viewer").dataset.sel = this.selected ? "1" : "";
@@ -222,9 +232,10 @@ const ANNOTATE = {
 
   _afterHistory(op) {
     this.dirty = true;
+    this._thumbs(op);
     if (this.selected && this._pageOf(this.selected) === null) this.selected = null;
     const p = this._opPage(op);
-    if (p && p !== STATE.currentPage && STATE.viewMode === "single") goToPage(p); else this.redraw();
+    if (p && p !== STATE.currentPage) goToPage(p).then(() => this.redraw()); else this.redraw();
   },
 
   undo() {
@@ -273,15 +284,11 @@ const ANNOTATE = {
   /* ----- 그리기 ----- */
   // 지금 화면에 보이는 쪽들 (한 쪽씩 보기: 1개, 연속 보기: 여러 개)
   views() {
-    if (STATE.viewMode === "continuous") return (typeof CONTVIEW !== "undefined" && CONTVIEW.views) || [];
+    if (isMultiView()) return (typeof CONTVIEW !== "undefined" && CONTVIEW.views) || [];
     return STATE.pageViewport ? [{ page: STATE.currentPage, vp: STATE.pageViewport, canvas: $("annoCanvas"), el: $("pageWrap") }] : [];
   },
 
-  sizeCanvas(c, w, h) {
-    const dpr = window.devicePixelRatio || 1;
-    c.width = Math.floor(w * dpr); c.height = Math.floor(h * dpr);
-    c.style.width = w + "px"; c.style.height = h + "px";
-  },
+  sizeCanvas(c, w, h) { sizeCanvasTo(c, w, h, canvasDpr(w, h)); },
 
   onPageRendered(w, h) {
     this.sizeCanvas($("annoCanvas"), w, h);
@@ -289,12 +296,47 @@ const ANNOTATE = {
     this.redraw();
   },
 
-  redraw() { this.views().forEach((v) => this.redrawView(v)); },
+  redraw() { this.views().forEach((v) => this.redrawView(v)); this.updateSelBar(); },
+
+  /* ----- 고른 주석 옆의 작은 도구 막대 (휴대폰에는 Delete 키가 없으니까) ----- */
+  updateSelBar() {
+    let bar = document.getElementById("selBar");
+    const s = this.selected;
+    const view = s && this.visible && this.tool === "select" ? this.views().find((v) => v.vp && v.canvas && (this.byPage[v.page] || []).includes(s)) : null;
+    if (!view || this.drag) { if (bar) bar.hidden = true; return; }
+    if (!bar) {
+      bar = document.createElement("div"); bar.id = "selBar"; bar.hidden = true;
+      bar.innerHTML = '<button data-sb="edit" title="메모 고치기">✎ 메모</button><button data-sb="del" title="삭제 (Delete)">🗑 삭제</button>';
+      bar.addEventListener("pointerdown", (e) => e.stopPropagation());
+      bar.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-sb]"); if (!b) return;
+        if (b.dataset.sb === "del") this.deleteSelected();
+        else if (this.selected && this.selected.type === "note") this.editNote(this.selected);
+      });
+      document.body.appendChild(bar);
+    }
+    bar.querySelector('[data-sb="edit"]').hidden = s.type !== "note";
+    const pts = this.vpPoints(s, view.vp), r = view.canvas.getBoundingClientRect(), vr = $("viewer").getBoundingClientRect();
+    const x0 = Math.min(...pts.map((p) => p[0])) + r.left, x1 = Math.max(...pts.map((p) => p[0])) + r.left;
+    const y0 = Math.min(...pts.map((p) => p[1])) + r.top, y1 = Math.max(...pts.map((p) => p[1])) + r.top;
+    bar.hidden = false;
+    const bw = bar.offsetWidth, bh = bar.offsetHeight;
+    let top = y0 - bh - 12; if (top < vr.top + 4) top = y1 + 12;
+    const left = Math.min(vr.right - bw - 6, Math.max(vr.left + 6, (x0 + x1) / 2 - bw / 2));
+    // 고른 주석이 화면 밖으로 나가면 숨겨요
+    if (y1 < vr.top || y0 > vr.bottom || top > vr.bottom - bh) { bar.hidden = true; return; }
+    bar.style.left = Math.round(left) + "px"; bar.style.top = Math.round(top) + "px";
+  },
+
+  editNote(s) {
+    this.noteEditing = s; $("noteText").value = s.text || "";
+    openModal("noteOverlay"); setTimeout(() => $("noteText").focus(), 30);
+  },
 
   redrawView(view) {
     const c = view.canvas, vp = view.vp;
     if (!c || !vp) return;
-    const ctx = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+    const ctx = c.getContext("2d"), dpr = canvasK(c);
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
@@ -466,7 +508,7 @@ const ANNOTATE = {
       if (e.target.closest && e.target.closest(".capC") && CAPTURE.active) return;
       const view = getView(); if (!view || !view.vp) return;
       this.av = view;
-      if (STATE.currentPage !== view.page) { STATE.currentPage = view.page; $("pageInput").value = view.page; THUMBS.setActive(view.page); }
+      if (STATE.currentPage !== view.page) { STATE.currentPage = view.page; updatePageUi(); }
       const v = vOf(e, view);
 
       if (this.tool === "select") {
@@ -482,6 +524,7 @@ const ANNOTATE = {
         $("viewer").dataset.sel = hit ? "1" : "";
         if (hit) {
           this.drag = { mode: "move", last: toPdf(v, view), dx: 0, dy: 0, shape: hit, view };
+          this.updateSelBar();
           this._blockSel = true; el.setPointerCapture(e.pointerId); e.preventDefault();
           if (hit.type === "note") showPop(hit, e.clientX, e.clientY, 3000);
         }
@@ -530,6 +573,7 @@ const ANNOTATE = {
     const finish = async () => {
       const d = this.drag; if (!d) return;
       this.drag = null;
+      if (d.mode === "move") this.updateSelBar();
       if (d.mode === "move") {
         if (Math.abs(d.dx) + Math.abs(d.dy) > 1e-6) {
           shapeTranslate(d.shape, -d.dx, -d.dy);
@@ -579,10 +623,7 @@ const ANNOTATE = {
       if (this.tool !== "select") return;
       const view = getView(); if (!view || !view.vp) return;
       const hit = this.hitTest(vOf(e, view), view);
-      if (hit && hit.type === "note") {
-        this.noteEditing = hit; $("noteText").value = hit.text || "";
-        openModal("noteOverlay"); $("noteText").focus();
-      }
+      if (hit && hit.type === "note") this.editNote(hit);
     });
   },
 
@@ -691,7 +732,7 @@ async function saveDocument(saveAsNew) {
   }
   let downloadName = STATE.fileName;
   if (!target && saveAsNew) {
-    const name = prompt("저장할 파일 이름을 입력하세요.", STATE.fileName.replace(/\.pdf$/i, ""));
+    const name = await DLG.prompt("저장할 파일 이름을 입력하세요.", STATE.fileName.replace(/\.pdf$/i, ""), { title: "다른 이름으로 저장하기" });
     if (!name) return false;
     downloadName = name.replace(/\.pdf$/i, "") + ".pdf";
   }
@@ -701,7 +742,7 @@ async function saveDocument(saveAsNew) {
     const raster = ANNOTATE.hasChanges() && ANNOTATE.lastMode === "raster";
     if (raster && target && !saveAsNew) {
       hideLoading();
-      if (!confirm("이 PDF는 암호나 권한 제한이 걸려 있어서, 글자를 그대로 둔 채 저장할 수 없어요.\n쪽을 이미지로 바꿔서 저장하면 글자 선택·검색이 안 돼요.\n\n원본 파일을 이 내용으로 덮어쓸까요?\n(취소하면 저장하지 않아요. '다른 이름으로 저장'을 쓰면 원본이 그대로 남아요.)")) return false;
+      if (!(await DLG.confirm("이 PDF는 암호나 권한 제한이 걸려 있어서, 글자를 그대로 둔 채 저장할 수 없어요. 쪽을 이미지로 바꿔서 저장하면 글자 선택·검색이 안 돼요.\n\n원본 파일을 이 내용으로 덮어쓸까요? (취소하면 저장하지 않아요. '다른 이름으로 저장'을 쓰면 원본이 그대로 남아요.)", { ok: "덮어쓰기", title: "저장하기" }))) return false;
       showLoading("저장하는 중…");
     }
     if (target) {

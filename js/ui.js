@@ -1,6 +1,27 @@
 /* ui.js — 탭 드롭다운 메뉴 · 키보드 단축키 · 떠 있는(이동 가능한) 창 · 사용자 설정/스킨 */
 const NEED = 1, DIS = 2;
 
+/* ---- 스킨 그림(도구 상자 배경): 이 브라우저에 저장해서 다음에도 보여줘요 ---- */
+const SKINIMG = {
+  KEY: "horix_skin_img_v1", pending: null,
+  load() { try { return JSON.parse(localStorage.getItem(this.KEY)) || null; } catch (e) { return null; } },
+  apply() {
+    const d = this.load();
+    $("ribbon").style.backgroundImage = d && d.url ? `url(${d.url})` : "";
+    $("skinFileName").value = d ? d.name : "";
+    $("skinPreviewBox").style.backgroundImage = d && d.url ? `url(${d.url})` : "";
+  },
+  commit() {
+    const p = this.pending; this.pending = null;
+    if (!p) return "";
+    try {
+      if (!p.url) localStorage.removeItem(this.KEY);
+      else localStorage.setItem(this.KEY, JSON.stringify(p));
+      return "";
+    } catch (e) { return " (그림이 커서 이번에만 적용돼요. 1MB 정도 이하의 그림을 써 주세요)"; }
+  },
+};
+
 /* ---- 사용자 설정 (localStorage에 저장돼서 다음에 열 때도 적용) ---- */
 const PREFS_KEY = "horix_prefs_v1";
 const PREFS = {
@@ -76,9 +97,9 @@ function withUnsavedCheck(proceed) {
 }
 
 Object.assign(ACT, {
-  newBlankP: () => makeBlankPDF("portrait"),
-  newBlankL: () => makeBlankPDF("landscape"),
-  openRecent: (name) => RECENT.openByName(name),
+  newBlankP: () => withUnsavedCheck(() => makeBlankPDF("portrait")),
+  newBlankL: () => withUnsavedCheck(() => makeBlankPDF("landscape")),
+  openRecent: (name) => withUnsavedCheck(() => RECENT.openByName(name)),
   closeDoc: () => { if (!STATE.pdfDoc) return; withUnsavedCheck(resetDocument); },
   quit: () => withUnsavedCheck(attemptQuit),
   settings: () => {
@@ -99,44 +120,6 @@ Object.assign(ACT, {
     openModal("skinWin"); centerWin($("skinWin"));
   },
 });
-
-/* ---- 찾기 ---- */
-const FINDSTATE = { lastPage: null, query: null };
-async function performFind() {
-  if (!STATE.pdfDoc) return;
-  const q = $("findText").value.trim();
-  if (!q) return;
-  const dir = document.querySelector('input[name="findDir"]:checked').value;
-  const caseSensitive = $("findCaseSensitive").checked;
-  const norm = (s) => (caseSensitive ? s : s.toLowerCase());
-  const target = norm(q);
-  const total = STATE.numPages;
-  const start = FINDSTATE.query === q ? (FINDSTATE.lastPage || STATE.currentPage) : STATE.currentPage;
-  let found = null;
-  showLoading("찾는 중…");
-  try {
-    for (let step = 1; step <= total; step++) {
-      const p = dir === "down"
-        ? (((start - 1 + step) % total) + total) % total + 1
-        : (((start - 1 - step) % total) + total) % total + 1;
-      const page = await STATE.pdfDoc.getPage(p);
-      const content = await page.getTextContent();
-      const text = content.items.map((it) => it.str).join(" ");
-      if (norm(text).includes(target)) { found = p; break; }
-    }
-  } finally { hideLoading(); }
-  if (found) {
-    goToPage(found);
-    FINDSTATE.lastPage = found; FINDSTATE.query = q;
-    if (!Array.from($("findHistory").options).some((o) => o.value === q)) {
-      const opt = document.createElement("option"); opt.value = q; $("findHistory").appendChild(opt);
-    }
-    showToast(`${found}쪽에서 찾았어요.`);
-  } else {
-    FINDSTATE.query = null;
-    showToast("찾을 수 없어요.");
-  }
-}
 
 /* ---- 작업창: 개요 / 첨부 파일 / 주석 속성 / 탐색 ---- */
 const TOOL_LABEL = { line: "선", arrow: "화살표", rect: "직사각형", ellipse: "타원", free: "자유형", highlight: "강조", underline: "밑줄", strike: "취소선", note: "스티커노트" };
@@ -166,25 +149,34 @@ async function renderOutlineList(items, depth) {
   return html;
 }
 
+const VIEW_NAMES = { single: "한 쪽 보기", continuous: "연속 보기", two: "두 쪽 보기", twoCont: "두 쪽 연속 보기" };
 function applyViewMode(mode) {
   if (!STATE.pdfDoc || STATE.viewMode === mode) return;
   STATE.viewMode = mode;
-  const cont = mode === "continuous";
-  $("pageWrap").style.display = cont ? "none" : "block";
-  $("continuousWrap").hidden = !cont;
-  $("continuousWrap").classList.toggle("show", cont);
-  if (cont) {
-    CONTVIEW.renderAll().then(() => CONTVIEW.scrollToPage(STATE.currentPage));
+  // 두 쪽을 나란히 볼 땐 기본 배율(120%)이면 화면을 넘치니 폭에 맞춰요
+  if ((mode === "two" || mode === "twoCont") && STATE.fitMode === "custom") STATE.fitMode = "width";
+  const multi = mode !== "single";
+  $("pageWrap").style.display = multi ? "none" : "block";
+  $("continuousWrap").hidden = !multi;
+  $("continuousWrap").classList.toggle("show", multi);
+  if (multi) {
+    const keep = STATE.currentPage;
+    CONTVIEW.renderAll().then(() => CONTVIEW.scrollToPage(keep));
   } else {
     CONTVIEW.destroy();
     renderCurrentPage();
   }
+  if (typeof FINDHL !== "undefined") FINDHL.paint();
+  showToast(VIEW_NAMES[mode] + "로 바꿨어요.");
 }
 
 Object.assign(ACT, {
   viewModeSingle: () => applyViewMode("single"),
   viewModeContinuous: () => applyViewMode("continuous"),
-  viewModeToggle: () => applyViewMode(STATE.viewMode === "single" ? "continuous" : "single"),
+  viewModeTwo: () => applyViewMode("two"),
+  viewModeTwoCont: () => applyViewMode("twoCont"),
+  // 리본의 '쪽 보기' 버튼: 한 쪽 → 연속 → 두 쪽 → 두 쪽 연속 → 한 쪽 … 차례로 바꿔요
+  viewModeToggle: () => applyViewMode({ single: "continuous", continuous: "two", two: "twoCont", twoCont: "single" }[STATE.viewMode] || "single"),
   find: () => { if (!STATE.pdfDoc) return; openModal("findWin"); centerWin($("findWin")); $("findText").focus(); },
   rotateDialog: () => { if (!STATE.pdfDoc) return; openModal("rotateWin"); centerWin($("rotateWin")); },
   showOutline: async () => {
@@ -240,10 +232,15 @@ Object.assign(ACT, {
   },
 });
 
-const fmtDate = (s) => {
-  const m = /D:(\d{4})(\d\d)(\d\d)(\d\d)?(\d\d)?(\d\d)?/.exec(s || "");
-  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4] || "00"}:${m[5] || "00"}:${m[6] || "00"}` : "-";
-};
+// 한PDF와 같은 모양: 2026-09-16 오후 2:36:01
+function fmtKoDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return "-";
+  const p2 = (n) => String(n).padStart(2, "0"), h = d.getHours();
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${h < 12 ? "오전" : "오후"} ${h % 12 || 12}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+}
+function pdfDate(s) {
+  try { return s && pdfjsLib.PDFDateString ? pdfjsLib.PDFDateString.toDateObject(s) : null; } catch (e) { return null; }
+}
 Object.assign(ACT, {
   rotateCCW: () => {
     setPageRotation(STATE.currentPage, getPageRotation(STATE.currentPage) + 270);
@@ -257,18 +254,20 @@ Object.assign(ACT, {
     const ok = (f) => (!perm || perm.includes(f) ? "허용" : "제한");
     const row = (k, v) => `<div class="drow"><label>${k}</label><div>${escapeHtml(v || "-")}</div></div>`;
     const n = STATE.fileBytes.byteLength;
-    const modified = new Date(STATE.fileModified).toLocaleString("ko-KR");
+    const fileTime = STATE.fileModified ? new Date(STATE.fileModified) : null;
+    const created = pdfDate(i.CreationDate) || fileTime, modified = fileTime || pdfDate(i.ModDate);
     $("dp_g").innerHTML =
       `<div class="docTop"><div class="docIcon">PDF</div><div class="drow" style="flex:1"><div>${escapeHtml(STATE.fileName)}</div></div></div>` +
       row("종류", "PDF 문서") + row("위치", "브라우저에서 연 파일") +
       row("크기", `${(n / 1048576).toFixed(2)} MB (${n.toLocaleString()} Bytes)`) +
       '<hr style="border:0;border-top:1px solid #e3e5ea;margin:12px 0">' +
-      row("만든 날짜", modified) + row("수정한 날짜", modified);
+      row("만든 날짜", fmtKoDate(created)) + row("수정한 날짜", fmtKoDate(modified)) +
+      row("쪽수", `${STATE.numPages}쪽`) + row("PDF 버전", md.info && md.info.PDFFormatVersion ? "PDF " + md.info.PDFFormatVersion : "-");
     $("dp_s").innerHTML = row("제목", i.Title) + row("주제", i.Subject) + row("지은이", i.Author) +
       `<div class="drow tall"><label>키워드</label><div>${escapeHtml(i.Keywords || "-")}</div></div>` +
       '<hr style="border:0;border-top:1px solid #e3e5ea;margin:12px 0">' +
       row("PDF 어플리케이션", i.Creator) + row("PDF 생산자", i.Producer);
-    $("dp_c").innerHTML = row("보안 방식", perm ? "보안 있음" : "보안 없음") + row("인쇄", ok(F.PRINT)) +
+    $("dp_c").innerHTML = row("보안 방식", STATE.passwordUsed ? "암호 보안 (열기 암호)" : perm ? "암호 보안 (권한 제한)" : "보안 없음") + row("인쇄", ok(F.PRINT)) +
       row("문서 구성", ok(F.ASSEMBLE)) + row("복사", ok(F.COPY)) + row("접근성을 위한 복사", ok(F.COPY_FOR_ACCESSIBILITY)) +
       row("주석 편집", ok(F.MODIFY_ANNOTATIONS)) + row("양식 필드 채우기", ok(F.FILL_INTERACTIVE_FORMS)) +
       row("서명", ok(F.FILL_INTERACTIVE_FORMS));
@@ -278,7 +277,7 @@ Object.assign(ACT, {
 ["line", "arrow", "rect", "ellipse", "free", "note", "highlight", "underline", "strike"].forEach((t) => (ACT["tool_" + t] = () => ANNOTATE.setTool(t)));
 
 /* ---- 탭 드롭다운 메뉴 (항목: [이름, 단축키 또는 ">", 동작 또는 하위메뉴, 플래그, 체크조건]) ---- */
-const CONV = [["HWP로 변환하기(P)…", "", "convertH"], ["DOCX로 변환하기(F)…", "", "convertD"], ["PPTX로 변환하기(G)…", "", "convertP"], ["XLSX로 변환하기(I)…", "", "convertX"], ["그림으로 변환하기(J)…", "", "convertI"]];
+const CONV = [["HWP로 변환하기(P)…", "", "convertH"], ["DOCX로 변환하기(F)…", "", "convertD"], ["PPTX로 변환하기(G)…", "", "convertP"], ["XLSX로 변환하기(I)…", "", "convertX"], ["PNG로 변환하기(J)…", "", "convertI"], ["JPG로 변환하기(K)…", "", "convertJ"]];
 const ROTATE_ITEMS = [
   ["왼쪽으로 90도 회전(R)", "", "rotateCCW", NEED],
   ["오른쪽으로 90도 회전(A)", "", "rotate", NEED],
@@ -295,8 +294,10 @@ const PANE_ITEMS = [
   ["모두 닫기(F)", "", "paneCloseAll"],
 ];
 const PAGEVIEW_ITEMS = [
-  ["한 쪽씩 보기", "", "viewModeSingle", NEED, () => STATE.viewMode === "single"],
-  ["연속 보기", "", "viewModeContinuous", NEED, () => STATE.viewMode === "continuous"],
+  ["한 쪽 보기(A)", "", "viewModeSingle", NEED, () => STATE.viewMode === "single"],
+  ["연속 보기(B)", "", "viewModeContinuous", NEED, () => STATE.viewMode === "continuous"],
+  ["두 쪽 보기(C)", "", "viewModeTwo", NEED, () => STATE.viewMode === "two"],
+  ["두 쪽 연속 보기(D)", "", "viewModeTwoCont", NEED, () => STATE.viewMode === "twoCont"],
 ];
 const TOOLBOX_ITEMS = [
   ["리본 메뉴", "", "toggleRibbon", 0, () => PREFS.data.ui.ribbon !== false],
@@ -314,6 +315,7 @@ const MENUS = {
     ["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
     ["도구 상자(C)", ">", TOOLBOX_ITEMS]],
   pageViewMenu: PAGEVIEW_ITEMS,
+  convMenu: CONV,
   rotateMenu: ROTATE_ITEMS,
   paneMenu: PANE_ITEMS,
   annot: [["주석 표시(T)", "Ctrl+J", "annoToggle", 0, () => ANNOTATE.visible], "-",
@@ -405,6 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
       $("skinPreviewBox").style.backgroundImage = `url(${reader.result})`;
       $("skinPreviewBox").textContent = "";
       $("ribbon").style.backgroundImage = `url(${reader.result})`;
+      SKINIMG.pending = { name: file.name, url: reader.result };
     };
     reader.readAsDataURL(file);
   });
@@ -412,6 +415,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("skinFileName").value = ""; $("skinFileInput").value = "";
     $("skinPreviewBox").style.backgroundImage = ""; $("skinPreviewBox").textContent = "";
     $("ribbon").style.backgroundImage = "";
+    SKINIMG.pending = { name: "", url: "" };
   });
   $("skinSave").addEventListener("click", () => {
     PREFS.data.skinMode = document.querySelector('input[name="skinMode"]:checked').value;
@@ -420,11 +424,13 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (PREFS.data.skinMode === "custom") PREFS.data.skin = $("skinCustomPicker").value;
     PREFS.save();
     PREFS.applySkin();
+    const msg = SKINIMG.commit();
     closeModal("skinWin");
-    showToast("스킨을 적용했어요.");
+    showToast("스킨을 적용했어요." + (msg || ""));
   });
   // 취소/닫기를 누르면 저장 안 된 미리보기를 되돌림
-  $("skinWin").addEventListener("click", (e) => { if (e.target.closest("[data-close]")) PREFS.applySkin(); });
+  $("skinWin").addEventListener("click", (e) => { if (e.target.closest("[data-close]")) { PREFS.applySkin(); SKINIMG.pending = null; SKINIMG.apply(); } });
+  SKINIMG.apply();
 
   // 저장 여부 확인 창 (문서 닫기 / 끝 전에 주석 등 변경사항이 있을 때)
   $("confirmSaveYes").addEventListener("click", async () => {
@@ -444,10 +450,6 @@ document.addEventListener("DOMContentLoaded", () => {
     pendingCloseAction = null;
   });
 
-  // 찾기
-  $("findText").addEventListener("input", () => { $("findExecute").disabled = !$("findText").value.trim(); });
-  $("findText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !$("findExecute").disabled) performFind(); });
-  $("findExecute").addEventListener("click", performFind);
 
   // 회전하기
   $("rotateApply").addEventListener("click", () => {
@@ -490,30 +492,80 @@ document.addEventListener("DOMContentLoaded", () => {
   }));
 });
 
-/* ---- 떠 있는 창: 드래그로 이동, 클릭하면 맨 앞으로 ---- */
+/* ---- 떠 있는 창: 드래그로 이동, 클릭하면 맨 앞으로 ----
+   손가락으로 끌 때 브라우저가 화면 스크롤로 가로채지 않도록 제목줄은 touch-action:none,
+   움직이는 동안에는 left/top 대신 transform만 바꿔서(화면 다시 배치 없이) 부드럽게 따라와요. */
 let zTop = 80;
-function centerWin(w) {
-  if (w.dataset.placed) return;
-  w.style.left = Math.max(20, (innerWidth - w.offsetWidth) / 2) + "px"; w.style.top = "70px"; w.dataset.placed = 1;
+function winLimits(w, width) {
+  const keep = Math.min(120, width);              // 가로로 최소 이만큼은 화면 안에 남겨요
+  return { minX: keep - width, maxX: innerWidth - keep, minY: 0, maxY: Math.max(0, innerHeight - 48) };
 }
-document.querySelectorAll(".fwin").forEach((w) => {
-  const h = w.querySelector(".fhead"); let d = null;
+function clampWin(w) {
+  if (!w.classList.contains("open")) return;
+  const r = w.getBoundingClientRect(), L = winLimits(w, r.width);
+  w.style.left = Math.round(Math.min(L.maxX, Math.max(L.minX, r.left))) + "px";
+  w.style.top = Math.round(Math.min(L.maxY, Math.max(L.minY, r.top))) + "px";
+}
+function centerWin(w) {
+  w.style.zIndex = ++zTop;
+  if (w.dataset.placed) { clampWin(w); return; }
+  const mob = isMobile(), W = w.offsetWidth, H = w.offsetHeight;
+  w.style.left = Math.round(Math.max(mob ? 6 : 20, (innerWidth - W) / 2)) + "px";
+  w.style.top = Math.round(mob ? Math.max(6, Math.min(56, innerHeight - H - 6)) : Math.max(20, Math.min(70, (innerHeight - H) / 2))) + "px";
+  w.dataset.placed = 1;
+}
+function topOpenWin() {
+  let top = null;
+  document.querySelectorAll(".fwin.open").forEach((w) => { if (!top || (Number(w.style.zIndex) || 0) >= (Number(top.style.zIndex) || 0)) top = w; });
+  return top;
+}
+function bindFloatingWin(w) {
+  const h = w.querySelector(".fhead");
+  let d = null, raf = 0;
+  const paint = () => { raf = 0; if (d) w.style.transform = `translate3d(${d.nx - d.x0}px,${d.ny - d.y0}px,0)`; };
   w.addEventListener("pointerdown", () => { w.style.zIndex = ++zTop; });
   h.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button")) return;
-    d = { x: e.clientX - w.offsetLeft, y: e.clientY - w.offsetTop }; h.setPointerCapture(e.pointerId);
+    if ((e.button !== 0 && e.pointerType === "mouse") || e.target.closest("button,input,select,.fhelp")) return;
+    const r = w.getBoundingClientRect();
+    d = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x0: r.left, y0: r.top, nx: r.left, ny: r.top, L: winLimits(w, r.width) };
+    w.style.left = r.left + "px"; w.style.top = r.top + "px";
+    try { h.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    w.classList.add("dragging");
+    e.preventDefault();
   });
   h.addEventListener("pointermove", (e) => {
-    if (!d) return;
-    w.style.left = Math.min(innerWidth - 80, Math.max(80 - w.offsetWidth, e.clientX - d.x)) + "px";
-    w.style.top = Math.max(0, Math.min(innerHeight - 40, e.clientY - d.y)) + "px";
+    if (!d || e.pointerId !== d.id) return;
+    d.nx = Math.min(d.L.maxX, Math.max(d.L.minX, d.x0 + e.clientX - d.sx));
+    d.ny = Math.min(d.L.maxY, Math.max(d.L.minY, d.y0 + e.clientY - d.sy));
+    if (!raf) raf = requestAnimationFrame(paint);
   });
-  h.addEventListener("pointerup", () => { d = null; });
-});
+  const end = () => {
+    if (!d) return;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    w.style.transform = "";
+    w.style.left = Math.round(d.nx) + "px"; w.style.top = Math.round(d.ny) + "px";
+    d = null; w.classList.remove("dragging");
+  };
+  h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end); h.addEventListener("lostpointercapture", end);
+}
+document.querySelectorAll(".fwin").forEach(bindFloatingWin);
+// 화면 크기가 바뀌면(휴대폰 가로·세로 전환 등) 열린 창이 화면 밖으로 나가지 않게
+window.addEventListener("resize", () => document.querySelectorAll(".fwin.open").forEach(clampWin));
+// Esc: 맨 위에 떠 있는 창부터 닫아요
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || (typeof PRESENT !== "undefined" && PRESENT.isOpen)) return;
+  const modal = document.querySelector(".modalBackdrop.open");
+  const w = modal || topOpenWin();
+  if (!w) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const x = w.querySelector("[data-close]");
+  if (x) x.click(); else closeModal(w.id);
+}, true);
 
 /* ---- 단축키 ---- */
 const SC = { "ctrl+o": "open", "ctrl+p": "print", "ctrl+s": "save", "alt+v": "saveAs", "f5": "presentStart", "shift+f5": "present",
-  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "exportRegion", "alt+x": "quit", "ctrl+f4": "closeDoc", "ctrl+a": "selectAll", "shift+w": "hand", "f12": "dict", "ctrl+f": "find" };
+  "ctrl+j": "annoToggle", "shift+q": "select", "ctrl+shift+c": "capture", "shift+a": "exportRegion", "alt+x": "quit", "ctrl+f4": "closeDoc", "ctrl+a": "selectAll", "shift+w": "hand", "f12": "dict", "ctrl+f": "find",
+  "ctrl+=": "zoomIn", "ctrl++": "zoomIn", "ctrl+shift++": "zoomIn", "ctrl+-": "zoomOut", "ctrl+shift+_": "zoomOut", "ctrl+0": "z100" };
 let chord = 0;
 document.addEventListener("keydown", (e) => {
   if ($("presentOverlay").classList.contains("open")) return;
@@ -529,14 +581,23 @@ document.addEventListener("keydown", (e) => {
     if (STATE.pdfDoc || SC[k] === "open" || SC[k] === "quit") { e.preventDefault(); ACT[SC[k]](); }
     return;
   }
-  if (!mod && STATE.pdfDoc && key === "arrowleft") ACT.prev();
-  if (!mod && STATE.pdfDoc && key === "arrowright") ACT.next();
+  if (mod || !STATE.pdfDoc) return;
+  if (key === "arrowleft") ACT.prev();
+  else if (key === "arrowright") ACT.next();
+  else if (!isMultiView() || STATE.viewMode === "two") {
+    // 한 쪽 보기에서는 PageUp/PageDown·Home/End로 쪽을 넘겨요 (연속 보기에서는 원래대로 스크롤)
+    const v = $("viewer"), atTop = v.scrollTop <= 2, atBottom = v.scrollTop + v.clientHeight >= v.scrollHeight - 2;
+    if (key === "pagedown" && atBottom) { e.preventDefault(); ACT.next(); }
+    else if (key === "pageup" && atTop) { e.preventDefault(); if (STATE.viewMode === "single") goToPage(STATE.currentPage - 1, { bottom: true }); else ACT.prev(); }
+    else if (key === "home" && !typing) { e.preventDefault(); ACT.first(); }
+    else if (key === "end" && !typing) { e.preventDefault(); ACT.last(); }
+  }
 });
 
 /* =========================================================
    손도구 · 복사/모두 선택 · 사전/검색/번역 · 변환 · 서식 문서 · 도구 상자 · 모바일
    ========================================================= */
-const CV_FMT = { H: "hwp", D: "docx", P: "pptx", X: "xlsx", I: "img", h: "hwp", d: "docx", p: "pptx", x: "xlsx", i: "img" };
+const CV_FMT = { H: "hwp", D: "docx", P: "pptx", X: "xlsx", I: "img", J: "jpg", h: "hwp", d: "docx", p: "pptx", x: "xlsx", i: "img", j: "jpg" };
 function openConvert(key) {
   if (!STATE.pdfDoc) return showToast("먼저 PDF를 열어주세요.");
   const fmt = CV_FMT[key] || "img";
@@ -566,10 +627,10 @@ Object.assign(ACT, {
   siteMenu: () => { $("siteMenu").hidden = !$("siteMenu").hidden; },
   convert: (key) => openConvert(key || "i"),
   convertH: () => openConvert("H"), convertD: () => openConvert("D"), convertP: () => openConvert("P"),
-  convertX: () => openConvert("X"), convertI: () => openConvert("I"),
-  tplLined: () => makeTemplate("lined", "줄 노트"), tplGrid: () => makeTemplate("grid", "모눈종이"),
-  tplDots: () => makeTemplate("dots", "점 모눈종이"), tplCornell: () => makeTemplate("cornell", "코넬 노트"),
-  tplStaff: () => makeTemplate("staff", "5선 악보"),
+  convertX: () => openConvert("X"), convertI: () => openConvert("I"), convertJ: () => openConvert("J"),
+  tplLined: () => withUnsavedCheck(() => makeTemplate("lined", "줄 노트")), tplGrid: () => withUnsavedCheck(() => makeTemplate("grid", "모눈종이")),
+  tplDots: () => withUnsavedCheck(() => makeTemplate("dots", "점 모눈종이")), tplCornell: () => withUnsavedCheck(() => makeTemplate("cornell", "코넬 노트")),
+  tplStaff: () => withUnsavedCheck(() => makeTemplate("staff", "5선 악보")),
   zoomTo: () => {
     if (!STATE.pdfDoc) return;
     $("zoomCustom").value = Math.round(STATE.scale * 100);
@@ -697,19 +758,23 @@ document.addEventListener("DOMContentLoaded", () => {
    ========================================================= */
 const HELP_SHORTCUTS = [
   ["Ctrl+O", "PDF 불러오기"], ["Ctrl+S", "저장하기 (주석 포함)"], ["Alt+V", "다른 이름으로 저장하기"], ["Ctrl+P", "인쇄"],
-  ["Ctrl+Q 다음 I", "문서 정보"], ["Ctrl+F", "찾기"], ["Ctrl+A / Ctrl+C", "글자 모두 선택 / 복사"],
+  ["Ctrl+Q 다음 I", "문서 정보"], ["Ctrl+F", "찾기"], ["F3 / Shift+F3", "다음 찾기 / 이전 찾기"], ["Ctrl+A / Ctrl+C", "글자 모두 선택 / 복사"],
+  ["Ctrl + 휠, Ctrl + / -", "확대 / 축소 (마우스가 있는 곳을 기준으로)"], ["Ctrl+0", "100%로 보기"], ["PageUp / PageDown, Home / End", "앞·뒤 쪽 / 첫·마지막 쪽 (한 쪽 보기)"],
   ["Ctrl+Z / Ctrl+Y", "실행 취소 / 다시 실행"], ["Delete", "선택한 주석 삭제"], ["Esc", "그리던 것 취소 → 선택 해제 → 선택 도구로"],
   ["Shift+Q / Shift+W", "선택 도구 / 손도구"], ["Ctrl+Shift+C", "화면 캡처"], ["Shift+A", "선택 영역 내보내기"], ["F12", "한컴 사전"],
   ["Ctrl+J", "주석 표시 켜고 끄기"], ["F5 / Shift+F5", "프레젠테이션 처음부터 / 현재 쪽부터"], ["← →", "쪽 이동"],
   ["슬라이드쇼 중", "← → 스페이스 Home End 로 이동, 휠·스와이프·화면 클릭도 돼요, Esc로 끝내요"],
   ["Alt+X / Ctrl+F4", "끝 / 문서 닫기 (브라우저가 막는 경우도 있어요)"],
+  ["Esc", "맨 위에 떠 있는 창 닫기"],
+  ["끌어다 놓기", "PDF 파일을 화면에 놓으면 열려요 (여러 개면 PDF 병합 창으로)"],
+  ["휴대폰", "두 손가락으로 확대·축소, 창은 제목줄을 잡고 옮겨요"],
 ];
 const HELP_TEXT = {
   docWin: "열어 둔 PDF의 파일 정보, 요약(제목·지은이 등), 보안(허용된 동작)을 보여줘요. 읽기 전용이에요.",
-  printWin: "범위·매수·용지를 정하면 그대로 인쇄용 PDF를 만들어 내려받아요. 미리 보기 아래 ◀ ▶ 로 다른 쪽을 확인할 수 있어요. 주석과 회전이 같이 반영돼요.",
+  printWin: "'시스템 프린터'를 고르면 이 기기의 인쇄 창이 열리고, 'HorixOffice PDF'(파일로 인쇄)를 고르면 범위·매수·용지를 반영한 인쇄용 PDF를 저장해요. 주석과 회전이 같이 반영돼요.",
   settingsWin: "파일을 열 때의 기본 배율·썸네일 표시·주석 색과 두께, 저장할 때 편집 이어가기용 원본을 넣을지를 정해요. 이 브라우저에만 저장돼요.",
-  skinWin: "화면 색(밝게·연한 회색·어둡게)과 강조 색을 바꿔요. 도구 상자 배경 그림은 이 탭을 닫으면 사라져요.",
-  findWin: "PDF 안의 글자를 찾아 그 쪽으로 이동해요. 글자가 없는 스캔본은 찾을 수 없어요.",
+  skinWin: "화면 색(밝게·연한 회색·어둡게·사용자 정의)과 강조 색을 바꿔요. 도구 상자 배경 그림도 이 브라우저에 저장돼서 다음에 열 때도 보여요.",
+  findWin: "PDF 안의 글자를 찾아 그 쪽으로 이동하고, 찾은 곳을 노란 상자로 보여줘요. '찾기(D)'나 Enter를 다시 누르면 다음 곳으로 가요(F3/Shift+F3도 돼요). 글자가 없는 스캔본은 찾을 수 없어요.",
   rotateWin: "쪽마다 따로 돌릴 수 있어요. '현재 쪽'은 지금 보는 쪽만, '문서 전체'는 모든 쪽을 돌려요. 저장하면 파일에도 반영돼요.",
   mergeWin: "+ 로 PDF를 추가하고 ↑↓ 로 순서를 바꿔요. 파일을 고른 뒤 '설정…'에서 그 파일의 일부 쪽만 합칠 수도 있어요. 암호·권한 제한이 걸린 PDF는 합칠 수 없어요.",
   mergeConfigWin: "고른 파일에서 병합에 쓸 쪽을 정해요. 예: 1,3,5-7",
@@ -750,74 +815,4 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("beforeunload", (e) => {
     if (STATE.pdfDoc && ANNOTATE.hasChanges()) { e.preventDefault(); e.returnValue = ""; return ""; }
   });
-});
-
-
-/* =========================================================
-   프레젠테이션 파트: 전환 효과 고르기 · 효과 설정 · 모니터 · 미리보기
-   ========================================================= */
-function savePres(patch) {
-  PREFS.data.pres = Object.assign(presSettings(), patch); PREFS.save(); syncPresUi();
-}
-function syncPresUi() {
-  const s = presSettings();
-  document.querySelectorAll(".tr").forEach((b) => b.classList.toggle("on", b.dataset.tr === s.type));
-  $("presDur").value = Number(s.dur).toFixed(1);
-  if ([...$("presMonitor").options].some((o) => o.value === String(s.monitor))) $("presMonitor").value = String(s.monitor);
-}
-function fillMonitors() {
-  ["presMonitor", "effMonitor"].forEach((id) => {
-    const sel = $(id), cur = presSettings().monitor;
-    sel.innerHTML = '<option value="default">기본 모니터</option>' +
-      PRESENT.screens.map((sc, i) => `<option value="${i}">${escapeHtml(sc.label || "모니터 " + (i + 1))}${sc.isPrimary ? " (주 모니터)" : ""}</option>`).join("");
-    if ([...sel.options].some((o) => o.value === String(cur))) sel.value = String(cur);
-  });
-}
-PRESENT.loadScreens = async function () {
-  if (!window.getScreenDetails) { showToast("이 브라우저는 모니터 선택을 지원하지 않아요. (크롬·엣지에서 가능해요)"); return false; }
-  try { const d = await window.getScreenDetails(); this.screens = Array.from(d.screens); fillMonitors(); return true; }
-  catch (e) { showToast("모니터 정보를 가져오지 못했어요. 권한을 허용해 주세요."); return false; }
-};
-function effForm() { return { type: $("effType").value, from: $("effFrom").value, dur: Math.max(0, Math.min(10, Number($("effDur").value) || 0)), monitor: $("effMonitor").value }; }
-function effRefreshDirState() { $("effFrom").disabled = !TRANS_TYPES.find((t) => t.id === $("effType").value).dir; }
-function effPlay() {
-  const f = effForm(), c = $("effPreview");
-  if (!STATE.pdfDoc) {
-    const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0, 0, c.width, c.height);
-    x.fillStyle = "#aab"; x.font = "14px sans-serif"; x.textAlign = "center"; x.fillText("PDF를 열면 여기서 미리 볼 수 있어요", c.width / 2, c.height / 2);
-    return;
-  }
-  PRESENT.previewOn(c, f.type, f.from, f.dur);
-}
-
-Object.assign(ACT, {
-  presentStart: () => PRESENT.open(1),
-  present: () => PRESENT.open(STATE.currentPage),
-  setTransition: (type, withPreview) => {
-    savePres({ type });
-    if (withPreview) { const s = presSettings(); PRESENT.previewOnViewer(type, s.from, s.dur); }
-  },
-  effectSettings: () => {
-    const s = presSettings();
-    $("effType").value = s.type; $("effFrom").value = s.from; $("effDur").value = Number(s.dur).toFixed(1);
-    fillMonitors(); $("effFindMonitors").hidden = !window.getScreenDetails;
-    effRefreshDirState();
-    openModal("effectWin"); centerWin($("effectWin"));
-    setTimeout(effPlay, 120);
-  },
-});
-TRANS_TYPES.forEach((t) => { ACT["tr_" + t.id] = () => ACT.setTransition(t.id, true); });
-
-document.addEventListener("DOMContentLoaded", () => {
-  syncPresUi(); fillMonitors();
-  document.querySelectorAll(".tr").forEach((b) => b.addEventListener("click", () => ACT.setTransition(b.dataset.tr, true)));
-  $("presDur").addEventListener("change", () => savePres({ dur: Math.max(0, Math.min(10, Number($("presDur").value) || 0)) }));
-  $("presMonitor").addEventListener("change", () => savePres({ monitor: $("presMonitor").value }));
-  $("presMonitor").addEventListener("focus", () => { if (window.getScreenDetails && !PRESENT.screens.length) PRESENT.loadScreens(); }, { once: true });
-  let tm = null; const later = () => { clearTimeout(tm); tm = setTimeout(effPlay, 200); };
-  $("effType").addEventListener("change", () => { effRefreshDirState(); later(); });
-  $("effFrom").addEventListener("change", later); $("effDur").addEventListener("input", later);
-  $("effPlay").addEventListener("click", effPlay);
-  $("effFindMonitors").addEventListener("click", () => PRESENT.loadScreens());
-  $("effOk").addEventListener("click", () => { savePres(effForm()); closeModal("effectWin"); showToast("효과 설정을 저장했어요."); });
 });
